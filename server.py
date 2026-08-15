@@ -26,31 +26,49 @@ def get_yt_extractor_opts():
             }
         },
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Mobile/15E148 Safari/604.1',
+            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15',
             'Accept-Language': 'en-US,en;q=0.9',
         }
     }
 
-def get_direct_stream_url(video_id):
-    now = time.time()
-    if video_id in url_cache:
-        url, exp = url_cache[video_id]
-        if now < exp:
-            return url
+def search_youtube_fallback(query):
+    # Fallback to Piped / Invidious public APIs if yt-dlp is rate-limited on cloud host IP
+    apis = [
+        f"https://pipedapi.kavin.rocks/search?q={urllib.parse.quote(query)}&filter=all",
+        f"https://api.piped.video/search?q={urllib.parse.quote(query)}&filter=all",
+        f"https://pipedapi.adminforge.de/search?q={urllib.parse.quote(query)}&filter=all"
+    ]
+    for api in apis:
+        try:
+            req = urllib.request.Request(api, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=4) as resp:
+                data = json.loads(resp.read().decode('utf-8'))
+                items = data.get('items', [])
+                results = []
+                for item in items:
+                    if item.get('type') == 'stream':
+                        v_id = item.get('url', '').split('=')[-1]
+                        if v_id:
+                            results.append({
+                                'id': v_id,
+                                'title': item.get('title', 'Unknown Track'),
+                                'uploader': item.get('uploaderName', 'YouTube Artist'),
+                                'thumbnail': item.get('thumbnail') or f"https://i.ytimg.com/vi/{v_id}/hqdefault.jpg",
+                                'duration': item.get('duration', 0),
+                                'durationStr': format_dur(item.get('duration', 0)),
+                                'youtubeUrl': f"https://www.youtube.com/watch?v={v_id}"
+                            })
+                if results:
+                    return results
+        except Exception:
+            continue
+    return []
 
-    try:
-        ydl_opts = get_yt_extractor_opts()
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(video_id, download=False)
-            if info:
-                stream_url = info.get('url')
-                if stream_url:
-                    url_cache[video_id] = (stream_url, now + 10800)
-                    return stream_url
-    except Exception as e:
-        print(f"yt_dlp extraction error for {video_id}: {e}")
-
-    return None
+def format_dur(seconds):
+    if not seconds: return "0:00"
+    m = int(seconds) // 60
+    s = int(seconds) % 60
+    return f"{m}:{s:02d}"
 
 class SpotifyYouTubeHandler(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
@@ -75,6 +93,7 @@ class SpotifyYouTubeHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_json_response({'error': 'Missing query parameter q'}, 400)
                 return
             
+            results = []
             try:
                 ydl_opts = get_yt_extractor_opts()
                 ydl_opts['extract_flat'] = True
@@ -83,7 +102,6 @@ class SpotifyYouTubeHandler(http.server.SimpleHTTPRequestHandler):
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     res = ydl.extract_info(f"ytsearch12:{search_query}", download=False)
                     entries = res.get('entries', []) if res else []
-                    results = []
                     for entry in entries:
                         if entry:
                             v_id = entry.get('id')
@@ -94,13 +112,16 @@ class SpotifyYouTubeHandler(http.server.SimpleHTTPRequestHandler):
                                 'uploader': entry.get('uploader') or entry.get('channel', 'YouTube Artist'),
                                 'thumbnail': f"https://i.ytimg.com/vi/{v_id}/hqdefault.jpg",
                                 'duration': dur or 0,
-                                'durationStr': self.format_duration(dur or 0),
+                                'durationStr': format_dur(dur or 0),
                                 'youtubeUrl': f"https://www.youtube.com/watch?v={v_id}"
                             })
-                    self.send_json_response({'results': results})
             except Exception as e:
-                print(f"Search error: {e}")
-                self.send_json_response({'results': []})
+                print(f"yt-dlp search exception: {e}")
+
+            if not results:
+                results = search_youtube_fallback(search_query)
+
+            self.send_json_response({'results': results})
             return
 
         # Stream Resolution Endpoint
@@ -110,65 +131,10 @@ class SpotifyYouTubeHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_json_response({'error': 'Missing video id'}, 400)
                 return
 
-            stream_url = get_direct_stream_url(video_id)
-            if stream_url:
-                self.send_json_response({
-                    'id': video_id,
-                    'proxyUrl': f"/api/proxy_audio?id={video_id}",
-                    'directUrl': stream_url,
-                    'useClientPlayer': False
-                })
-            else:
-                # If cloud IP is blocked by YouTube bot check, signal client browser player fallback!
-                self.send_json_response({
-                    'id': video_id,
-                    'useClientPlayer': True
-                })
-            return
-
-        # Audio Proxy Endpoint
-        elif path == '/api/proxy_audio':
-            video_id = query.get('id', [''])[0]
-            if not video_id:
-                self.send_response(400)
-                self.end_headers()
-                return
-
-            direct_url = get_direct_stream_url(video_id)
-            if not direct_url:
-                self.send_response(404)
-                self.end_headers()
-                return
-
-            try:
-                headers = {
-                    'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15'
-                }
-                range_header = self.headers.get('Range')
-                if range_header:
-                    headers['Range'] = range_header
-
-                req = urllib.request.Request(direct_url, headers=headers)
-                resp = urllib.request.urlopen(req, timeout=10)
-
-                self.send_response(resp.getcode())
-                for header_key in ['Content-Type', 'Content-Length', 'Content-Range', 'Accept-Ranges']:
-                    val = resp.headers.get(header_key)
-                    if val:
-                        self.send_header(header_key, val)
-
-                self.send_header('Access-Control-Allow-Origin', '*')
-                self.end_headers()
-
-                chunk_size = 32 * 1024
-                while True:
-                    chunk = resp.read(chunk_size)
-                    if not chunk:
-                        break
-                    self.wfile.write(chunk)
-
-            except Exception as e:
-                print(f"Proxy streaming error for {video_id}: {e}")
+            self.send_json_response({
+                'id': video_id,
+                'useClientPlayer': True
+            })
             return
 
         super().do_GET()
@@ -180,12 +146,6 @@ class SpotifyYouTubeHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header('Content-Length', str(len(body)))
         self.end_headers()
         self.wfile.write(body)
-
-    def format_duration(self, seconds):
-        if not seconds: return "0:00"
-        m = int(seconds) // 60
-        s = int(seconds) % 60
-        return f"{m}:{s:02d}"
 
 if __name__ == '__main__':
     web_dir = os.path.dirname(os.path.abspath(__file__))

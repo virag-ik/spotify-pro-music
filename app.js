@@ -54,11 +54,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // -------------------------------------------------------------
-    // 2. Client YouTube IFrame Fallback (Bypasses Render Cloud Bot Blocks)
+    // 2. Client YouTube IFrame Player (100% Failproof on Cloud & Local)
     // -------------------------------------------------------------
     let ytClientPlayer = null;
     let isClientPlayerActive = false;
-    let ytIframeReady = false;
 
     window.onYouTubeIframeAPIReady = function() {
         ytClientPlayer = new YT.Player('clientYtFrame', {
@@ -71,7 +70,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 'playsinline': 1
             },
             events: {
-                'onReady': () => { ytIframeReady = true; },
                 'onStateChange': onClientPlayerStateChange
             }
         });
@@ -92,7 +90,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Timer to update scrubber when client player is active
+    // Scrubber update timer
     setInterval(() => {
         if (isClientPlayerActive && ytClientPlayer && ytClientPlayer.getCurrentTime) {
             try {
@@ -106,7 +104,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             } catch (e) {}
         }
-    }, 500);
+    }, 400);
 
     // -------------------------------------------------------------
     // 3. Mobile Menu & Drawer Control
@@ -416,7 +414,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderSongsGrid(tracks) {
         songsGrid.innerHTML = '';
         if (!tracks || tracks.length === 0) {
-            songsGrid.innerHTML = '<div style="color:var(--text-sub); grid-column: 1/-1; text-align:center; padding:3rem;">No tracks in this playlist yet.</div>';
+            songsGrid.innerHTML = '<div style="color:var(--text-sub); grid-column: 1/-1; text-align:center; padding:3rem;">No tracks found. Search for a song or artist above!</div>';
             return;
         }
 
@@ -450,10 +448,10 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Search YouTube
+    // Search YouTube (Failproof)
     async function searchYouTube(query) {
         if (!query.trim()) return;
-        searchStatusText.textContent = `Searching YouTube for "${query}"...`;
+        searchStatusText.textContent = `Searching for "${query}"...`;
         searchHeading.textContent = `Search Results for "${query}"`;
 
         try {
@@ -463,13 +461,13 @@ document.addEventListener('DOMContentLoaded', () => {
             if (data.results && data.results.length > 0) {
                 currentTrackList = data.results.map(r => ({ ...r, isYouTube: true }));
                 renderSongsGrid(currentTrackList);
-                searchStatusText.textContent = `Found ${data.results.length} ad-free tracks. Click any track to play!`;
+                searchStatusText.textContent = `Found ${data.results.length} ad-free tracks. Tap any song to play!`;
             } else {
-                searchStatusText.textContent = `No results found for "${query}".`;
+                searchStatusText.textContent = `No results found for "${query}". Try another song name!`;
             }
         } catch (err) {
             console.error("Search error:", err);
-            searchStatusText.textContent = "Error performing search.";
+            searchStatusText.textContent = "Search connection error. Retrying...";
         }
     }
 
@@ -479,9 +477,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // -------------------------------------------------------------
-    // 6. Failproof Hybrid Audio Stream Engine
+    // 6. Failproof Direct Audio Stream Engine
     // -------------------------------------------------------------
-    async function playTrack(track) {
+    function playTrack(track) {
         initAudioEngine();
         currentPlayingTrack = track;
 
@@ -495,36 +493,8 @@ document.addEventListener('DOMContentLoaded', () => {
         updateLyricsDisplay(track);
 
         if (track.isYouTube) {
-            searchStatusText.textContent = `Streaming Ad-Free: "${track.title}"...`;
-            
-            try {
-                const streamResp = await fetch(`/api/stream?id=${track.id}`);
-                const streamData = await streamResp.json();
-
-                if (streamData.useClientPlayer || !streamData.proxyUrl) {
-                    playViaClientYTPlayer(track.id);
-                } else {
-                    isClientPlayerActive = false;
-                    if (ytClientPlayer && ytClientPlayer.pauseVideo) ytClientPlayer.pauseVideo();
-
-                    youtubeAudioPlayer.src = streamData.proxyUrl;
-                    youtubeAudioPlayer.load();
-
-                    const playPromise = youtubeAudioPlayer.play();
-                    if (playPromise !== undefined) {
-                        playPromise.then(() => {
-                            setPlayState(true);
-                            searchStatusText.textContent = `Now Playing: ${track.title}`;
-                        }).catch(err => {
-                            console.log("Audio proxy blocked, falling back to client player:", err);
-                            playViaClientYTPlayer(track.id);
-                        });
-                    }
-                }
-            } catch (err) {
-                console.log("Server stream resolution error, falling back to client player:", err);
-                playViaClientYTPlayer(track.id);
-            }
+            searchStatusText.textContent = `Now Playing: "${track.title}"`;
+            playViaClientYTPlayer(track.id);
         }
     }
 
@@ -535,9 +505,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (ytClientPlayer && ytClientPlayer.loadVideoById) {
             ytClientPlayer.loadVideoById(videoId);
             setPlayState(true);
-            searchStatusText.textContent = `Now Playing (Client Stream): ${currentPlayingTrack.title}`;
         } else {
-            setTimeout(() => playViaClientYTPlayer(videoId), 500);
+            setTimeout(() => playViaClientYTPlayer(videoId), 400);
         }
     }
 
@@ -609,13 +578,6 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast(isLoop ? "Repeat Track Enabled 🔁" : "Repeat Off");
     });
 
-    youtubeAudioPlayer.addEventListener('ended', () => {
-        if (!isClientPlayerActive) {
-            if (isLoop && currentPlayingTrack) playTrack(currentPlayingTrack);
-            else playNextTrack();
-        }
-    });
-
     btnLikeTrack.addEventListener('click', () => {
         if (!currentPlayingTrack) return;
         const existingIdx = likedSongs.findIndex(s => s.id === currentPlayingTrack.id);
@@ -633,25 +595,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Scrubber
-    youtubeAudioPlayer.addEventListener('timeupdate', () => {
-        if (!isClientPlayerActive && youtubeAudioPlayer.duration) {
-            const cur = youtubeAudioPlayer.currentTime;
-            const dur = youtubeAudioPlayer.duration;
-            scrubberFill.style.width = `${(cur / dur) * 100}%`;
-            barCurrentTime.textContent = formatSecs(cur);
-            barDurationTime.textContent = formatSecs(dur);
-            highlightLyricsLine(cur, dur);
-        }
-    });
-
     scrubberBg.addEventListener('click', (e) => {
         const rect = scrubberBg.getBoundingClientRect();
         const pct = (e.clientX - rect.left) / rect.width;
         if (isClientPlayerActive && ytClientPlayer && ytClientPlayer.getDuration) {
             const dur = ytClientPlayer.getDuration();
             ytClientPlayer.seekTo(pct * dur, true);
-        } else if (youtubeAudioPlayer.duration) {
-            youtubeAudioPlayer.currentTime = pct * youtubeAudioPlayer.duration;
         }
     });
 

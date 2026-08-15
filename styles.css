@@ -41,7 +41,7 @@ body {
     padding: 8px 8px 0 8px;
 }
 
-/* Sidebar */
+/* Sidebar (Desktop / Laptop) */
 .sidebar {
     background-color: var(--sp-bg-black);
     border-radius: 8px;
@@ -236,7 +236,7 @@ body {
     padding: 0.6rem 1.2rem;
     border-radius: 30px;
     box-shadow: 0 10px 25px rgba(29, 185, 84, 0.4);
-    z-index: 999;
+    z-index: 999999;
     transition: all 0.3s ease;
 }
 
@@ -354,6 +354,8 @@ body {
     display: flex;
     flex-direction: column;
     gap: 1.25rem;
+    position: relative;
+    z-index: 1;
 }
 
 .filter-chips {
@@ -405,7 +407,7 @@ body {
     font-family: var(--font-mono);
 }
 
-/* Spotify Song Cards Grid */
+/* Spotify Song Cards Grid (Desktop / Laptop) */
 .spotify-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
@@ -668,7 +670,7 @@ canvas#spotifyCanvas {
     inset: 0;
     background: rgba(0, 0, 0, 0.8);
     backdrop-filter: blur(8px);
-    z-index: 900;
+    z-index: 99999;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -819,7 +821,7 @@ canvas#spotifyCanvas {
     accent-color: var(--sp-green);
 }
 
-/* Mobile Bottom Navigation Bar */
+/* Mobile Bottom Navigation Bar (Spotify Mobile App Style) */
 .mobile-bottom-nav {
     display: none;
     position: fixed;
@@ -828,8 +830,8 @@ canvas#spotifyCanvas {
     width: 100vw;
     height: 56px;
     background: #000000;
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
-    z-index: 120;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    z-index: 99999;
     justify-content: space-around;
     align-items: center;
 }
@@ -871,9 +873,9 @@ canvas#spotifyCanvas {
         left: 0;
         width: 280px;
         height: 100vh;
-        z-index: 1000;
+        z-index: 100000;
         transform: translateX(-100%);
-        box-shadow: 10px 0 30px rgba(0, 0, 0, 0.9);
+        box-shadow: 10px 0 30px rgba(0, 0, 0, 0.95);
     }
 
     .sidebar.open {
@@ -893,7 +895,38 @@ canvas#spotifyCanvas {
     }
 
     .content-scrollable {
-        padding-bottom: 160px;
+        padding-bottom: 140px;
+    }
+
+    /* Spotify Compact Song Cards on Mobile (< 768px) */
+    .spotify-grid {
+        grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+        gap: 0.6rem;
+    }
+
+    .song-card {
+        padding: 0.5rem;
+        gap: 0.4rem;
+        border-radius: 6px;
+    }
+
+    .card-title {
+        font-size: 0.78rem;
+    }
+
+    .card-artist {
+        font-size: 0.68rem;
+    }
+
+    .card-duration {
+        font-size: 0.62rem;
+    }
+
+    .play-hover-btn {
+        width: 32px;
+        height: 32px;
+        bottom: 6px;
+        right: 6px;
     }
 
     /* Spotify Floating Mobile Mini Player Bar */
@@ -903,28 +936,36 @@ canvas#spotifyCanvas {
         left: 8px;
         right: 8px;
         width: calc(100vw - 16px);
-        height: 60px;
+        height: 56px;
         background: #282828;
         border-radius: 8px;
         border: none;
         grid-template-columns: 1fr auto;
-        padding: 0 0.8rem;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.8);
-        z-index: 110;
+        padding: 0 0.7rem;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.9);
+        z-index: 9999;
     }
 
     .now-playing-left {
-        max-width: calc(100vw - 140px);
+        max-width: calc(100vw - 130px);
     }
 
     .now-playing-thumb {
-        width: 44px;
-        height: 44px;
+        width: 40px;
+        height: 40px;
         border-radius: 4px;
     }
 
     .now-playing-info {
-        max-width: 130px;
+        max-width: 120px;
+    }
+
+    .track-title-text {
+        font-size: 0.78rem;
+    }
+
+    .track-artist-text {
+        font-size: 0.68rem;
     }
 
     .player-controls-center {
@@ -941,8 +982,8 @@ canvas#spotifyCanvas {
     }
 
     .main-play-btn {
-        width: 36px;
-        height: 36px;
+        width: 34px;
+        height: 34px;
     }
 
     .artist-hero-card {
@@ -964,24 +1005,20 @@ canvas#spotifyCanvas {
 @media (max-width: 480px) {
     .spotify-grid {
         grid-template-columns: repeat(2, 1fr);
-        gap: 0.75rem;
-    }
-
-    .song-card {
-        padding: 0.6rem;
+        gap: 0.5rem;
     }
 
     .equalizer-grid {
         grid-template-columns: repeat(5, 1fr);
-        gap: 0.4rem;
-        padding: 1rem 0.5rem;
+        gap: 0.3rem;
+        padding: 0.8rem 0.4rem;
     }
 
     .eq-band label {
-        font-size: 0.6rem;
+        font-size: 0.58rem;
     }
 
     .eq-band input[type=range] {
-        height: 90px;
+        height: 80px;
     }
 }
