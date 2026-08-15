@@ -1,7 +1,7 @@
-// Spotify Pro Dynamic Audio Engine (Cloud Render Failproof + Mobile & Laptop Responsive)
+// Spotify Pro Dynamic Audio Engine (Cloud Render Hybrid Streaming + Mobile App UI)
 document.addEventListener('DOMContentLoaded', () => {
     // -------------------------------------------------------------
-    // 1. Audio Context & 5-Band Equalizer Setup
+    // 1. Audio Context & Equalizer Setup
     // -------------------------------------------------------------
     let audioCtx = null;
     let masterGain = null;
@@ -54,7 +54,62 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // -------------------------------------------------------------
-    // 2. Mobile Menu & Drawer Control
+    // 2. Client YouTube IFrame Fallback (Bypasses Render Cloud Bot Blocks)
+    // -------------------------------------------------------------
+    let ytClientPlayer = null;
+    let isClientPlayerActive = false;
+    let ytIframeReady = false;
+
+    window.onYouTubeIframeAPIReady = function() {
+        ytClientPlayer = new YT.Player('clientYtFrame', {
+            height: '1',
+            width: '1',
+            videoId: '',
+            playerVars: {
+                'autoplay': 1,
+                'controls': 0,
+                'playsinline': 1
+            },
+            events: {
+                'onReady': () => { ytIframeReady = true; },
+                'onStateChange': onClientPlayerStateChange
+            }
+        });
+    };
+
+    function onClientPlayerStateChange(event) {
+        if (event.data === YT.PlayerState.PLAYING) {
+            setPlayState(true);
+            searchStatusText.textContent = `Now Playing: ${currentPlayingTrack ? currentPlayingTrack.title : ''}`;
+        } else if (event.data === YT.PlayerState.PAUSED) {
+            setPlayState(false);
+        } else if (event.data === YT.PlayerState.ENDED) {
+            if (isLoop && currentPlayingTrack) {
+                playTrack(currentPlayingTrack);
+            } else {
+                playNextTrack();
+            }
+        }
+    }
+
+    // Timer to update scrubber when client player is active
+    setInterval(() => {
+        if (isClientPlayerActive && ytClientPlayer && ytClientPlayer.getCurrentTime) {
+            try {
+                const cur = ytClientPlayer.getCurrentTime() || 0;
+                const dur = ytClientPlayer.getDuration() || 0;
+                if (dur > 0) {
+                    scrubberFill.style.width = `${(cur / dur) * 100}%`;
+                    barCurrentTime.textContent = formatSecs(cur);
+                    barDurationTime.textContent = formatSecs(dur);
+                    highlightLyricsLine(cur, dur);
+                }
+            } catch (e) {}
+        }
+    }, 500);
+
+    // -------------------------------------------------------------
+    // 3. Mobile Menu & Drawer Control
     // -------------------------------------------------------------
     const sidebarDrawer = document.getElementById('sidebarDrawer');
     const btnOpenMobileMenu = document.getElementById('btnOpenMobileMenu');
@@ -81,7 +136,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // -------------------------------------------------------------
-    // 3. Playlists & Liked Songs Persistence
+    // 4. Playlists & Liked Songs Persistence
     // -------------------------------------------------------------
     let likedSongs = JSON.parse(localStorage.getItem('spotify_liked_songs') || '[]');
     let userPlaylists = JSON.parse(localStorage.getItem('spotify_user_playlists') || '[]');
@@ -209,7 +264,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // -------------------------------------------------------------
-    // 4. Featured Tracks & Artist Profiles
+    // 5. Featured Tracks & Artist Profiles
     // -------------------------------------------------------------
     const defaultFeaturedTracks = [
         {
@@ -424,7 +479,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // -------------------------------------------------------------
-    // 5. Failproof Render & Cloud Audio Playback Engine
+    // 6. Failproof Hybrid Audio Stream Engine
     // -------------------------------------------------------------
     async function playTrack(track) {
         initAudioEngine();
@@ -442,34 +497,47 @@ document.addEventListener('DOMContentLoaded', () => {
         if (track.isYouTube) {
             searchStatusText.textContent = `Streaming Ad-Free: "${track.title}"...`;
             
-            // First fetch audio metadata to get stream URL or proxy URL
             try {
-                const metaResp = await fetch(`/api/stream?id=${track.id}`);
-                const metaData = await metaResp.json();
+                const streamResp = await fetch(`/api/stream?id=${track.id}`);
+                const streamData = await streamResp.json();
 
-                let primaryAudioSrc = metaData.proxyUrl || `/api/proxy_audio?id=${track.id}`;
-                youtubeAudioPlayer.src = primaryAudioSrc;
-                youtubeAudioPlayer.load();
+                if (streamData.useClientPlayer || !streamData.proxyUrl) {
+                    playViaClientYTPlayer(track.id);
+                } else {
+                    isClientPlayerActive = false;
+                    if (ytClientPlayer && ytClientPlayer.pauseVideo) ytClientPlayer.pauseVideo();
 
-                const playPromise = youtubeAudioPlayer.play();
-                if (playPromise !== undefined) {
-                    playPromise.then(() => {
-                        setPlayState(true);
-                        searchStatusText.textContent = `Now Playing: ${track.title}`;
-                    }).catch(err => {
-                        console.log("Audio proxy retry with directUrl:", err);
-                        // Fallback to direct stream URL if proxy fails on cloud host
-                        if (metaData.directUrl) {
-                            youtubeAudioPlayer.src = metaData.directUrl;
-                            youtubeAudioPlayer.play().then(() => setPlayState(true)).catch(() => {});
-                        }
-                    });
+                    youtubeAudioPlayer.src = streamData.proxyUrl;
+                    youtubeAudioPlayer.load();
+
+                    const playPromise = youtubeAudioPlayer.play();
+                    if (playPromise !== undefined) {
+                        playPromise.then(() => {
+                            setPlayState(true);
+                            searchStatusText.textContent = `Now Playing: ${track.title}`;
+                        }).catch(err => {
+                            console.log("Audio proxy blocked, falling back to client player:", err);
+                            playViaClientYTPlayer(track.id);
+                        });
+                    }
                 }
             } catch (err) {
-                console.error("Stream error:", err);
-                youtubeAudioPlayer.src = `/api/proxy_audio?id=${track.id}`;
-                youtubeAudioPlayer.play().then(() => setPlayState(true)).catch(() => {});
+                console.log("Server stream resolution error, falling back to client player:", err);
+                playViaClientYTPlayer(track.id);
             }
+        }
+    }
+
+    function playViaClientYTPlayer(videoId) {
+        isClientPlayerActive = true;
+        youtubeAudioPlayer.pause();
+
+        if (ytClientPlayer && ytClientPlayer.loadVideoById) {
+            ytClientPlayer.loadVideoById(videoId);
+            setPlayState(true);
+            searchStatusText.textContent = `Now Playing (Client Stream): ${currentPlayingTrack.title}`;
+        } else {
+            setTimeout(() => playViaClientYTPlayer(videoId), 500);
         }
     }
 
@@ -485,6 +553,17 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     btnBarPlayPause.addEventListener('click', () => {
+        if (isClientPlayerActive && ytClientPlayer) {
+            if (isPlaying) {
+                ytClientPlayer.pauseVideo();
+                setPlayState(false);
+            } else {
+                ytClientPlayer.playVideo();
+                setPlayState(true);
+            }
+            return;
+        }
+
         if (!youtubeAudioPlayer.src && currentPlayingTrack) {
             playTrack(currentPlayingTrack);
             return;
@@ -531,10 +610,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     youtubeAudioPlayer.addEventListener('ended', () => {
-        if (isLoop && currentPlayingTrack) {
-            playTrack(currentPlayingTrack);
-        } else {
-            playNextTrack();
+        if (!isClientPlayerActive) {
+            if (isLoop && currentPlayingTrack) playTrack(currentPlayingTrack);
+            else playNextTrack();
         }
     });
 
@@ -556,7 +634,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Scrubber
     youtubeAudioPlayer.addEventListener('timeupdate', () => {
-        if (youtubeAudioPlayer.duration) {
+        if (!isClientPlayerActive && youtubeAudioPlayer.duration) {
             const cur = youtubeAudioPlayer.currentTime;
             const dur = youtubeAudioPlayer.duration;
             scrubberFill.style.width = `${(cur / dur) * 100}%`;
@@ -569,15 +647,21 @@ document.addEventListener('DOMContentLoaded', () => {
     scrubberBg.addEventListener('click', (e) => {
         const rect = scrubberBg.getBoundingClientRect();
         const pct = (e.clientX - rect.left) / rect.width;
-        if (youtubeAudioPlayer.duration) {
+        if (isClientPlayerActive && ytClientPlayer && ytClientPlayer.getDuration) {
+            const dur = ytClientPlayer.getDuration();
+            ytClientPlayer.seekTo(pct * dur, true);
+        } else if (youtubeAudioPlayer.duration) {
             youtubeAudioPlayer.currentTime = pct * youtubeAudioPlayer.duration;
         }
     });
 
     spotifyVolumeSlider.addEventListener('input', (e) => {
-        const val = parseInt(e.target.value) / 100;
-        youtubeAudioPlayer.volume = val;
-        if (masterGain) masterGain.gain.value = val;
+        const val = parseInt(e.target.value);
+        if (isClientPlayerActive && ytClientPlayer && ytClientPlayer.setVolume) {
+            ytClientPlayer.setVolume(val);
+        }
+        youtubeAudioPlayer.volume = val / 100;
+        if (masterGain) masterGain.gain.value = val / 100;
     });
 
     function formatSecs(secs) {
