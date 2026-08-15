@@ -1,4 +1,4 @@
-// Spotify Pro Dynamic Mobile & Laptop Responsive Audio Engine
+// Spotify Pro Dynamic Audio Engine (Cloud Render Failproof + Mobile & Laptop Responsive)
 document.addEventListener('DOMContentLoaded', () => {
     // -------------------------------------------------------------
     // 1. Audio Context & 5-Band Equalizer Setup
@@ -72,10 +72,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Close drawer when clicking nav items on mobile
     document.querySelectorAll('.nav-item, .pl-item').forEach(item => {
         item.addEventListener('click', () => {
-            if (window.innerWidth <= 900) {
+            if (window.innerWidth <= 768) {
                 sidebarDrawer.classList.remove('open');
             }
         });
@@ -424,8 +423,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.key === 'Enter') searchYouTube(ytSearchInput.value);
     });
 
-    // Play Track
-    function playTrack(track) {
+    // -------------------------------------------------------------
+    // 5. Failproof Render & Cloud Audio Playback Engine
+    // -------------------------------------------------------------
+    async function playTrack(track) {
         initAudioEngine();
         currentPlayingTrack = track;
 
@@ -440,19 +441,34 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (track.isYouTube) {
             searchStatusText.textContent = `Streaming Ad-Free: "${track.title}"...`;
-            const proxyUrl = `/api/proxy_audio?id=${track.id}`;
-            youtubeAudioPlayer.src = proxyUrl;
-            youtubeAudioPlayer.load();
+            
+            // First fetch audio metadata to get stream URL or proxy URL
+            try {
+                const metaResp = await fetch(`/api/stream?id=${track.id}`);
+                const metaData = await metaResp.json();
 
-            const playPromise = youtubeAudioPlayer.play();
-            if (playPromise !== undefined) {
-                playPromise.then(() => {
-                    setPlayState(true);
-                    searchStatusText.textContent = `Now Playing: ${track.title}`;
-                }).catch(err => {
-                    console.log("Play interaction required:", err);
-                    searchStatusText.textContent = `Click Play to start audio: ${track.title}`;
-                });
+                let primaryAudioSrc = metaData.proxyUrl || `/api/proxy_audio?id=${track.id}`;
+                youtubeAudioPlayer.src = primaryAudioSrc;
+                youtubeAudioPlayer.load();
+
+                const playPromise = youtubeAudioPlayer.play();
+                if (playPromise !== undefined) {
+                    playPromise.then(() => {
+                        setPlayState(true);
+                        searchStatusText.textContent = `Now Playing: ${track.title}`;
+                    }).catch(err => {
+                        console.log("Audio proxy retry with directUrl:", err);
+                        // Fallback to direct stream URL if proxy fails on cloud host
+                        if (metaData.directUrl) {
+                            youtubeAudioPlayer.src = metaData.directUrl;
+                            youtubeAudioPlayer.play().then(() => setPlayState(true)).catch(() => {});
+                        }
+                    });
+                }
+            } catch (err) {
+                console.error("Stream error:", err);
+                youtubeAudioPlayer.src = `/api/proxy_audio?id=${track.id}`;
+                youtubeAudioPlayer.play().then(() => setPlayState(true)).catch(() => {});
             }
         }
     }
@@ -820,7 +836,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('chipLiked').addEventListener('click', () => { showSection('search'); searchHeading.textContent = "Your Liked Songs Library"; currentTrackList = [...likedSongs]; renderSongsGrid(currentTrackList); });
     document.getElementById('chipVisualizer').addEventListener('click', () => showSection('visualizer'));
 
-    // Commit new changes to Git
+    // Init
     renderSongsGrid(defaultFeaturedTracks);
     drawSpotifyVisualizer();
 });

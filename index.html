@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Spotify PRO - Dynamic Ad-Free Music Player</title>
-    <meta name="description" content="Spotify Pro dynamic ad-free YouTube player with mobile & laptop responsive design, lyrics, 5-band equalizer, and spectrum visualizer.">
+    <meta name="description" content="Spotify Pro ad-free YouTube player with mobile & laptop responsive design, lyrics, 5-band equalizer, and spectrum visualizer.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;600;700&display=swap" rel="stylesheet">
@@ -12,7 +12,7 @@
 </head>
 <body>
     <div class="spotify-layout">
-        <!-- 1. Sidebar Navigation (Desktop / Tablet Drawer) -->
+        <!-- 1. Sidebar Navigation (Desktop / Laptop) -->
         <aside class="sidebar" id="sidebarDrawer">
             <div class="brand">
                 <div class="spotify-logo">
@@ -96,8 +96,11 @@
                     <button class="search-submit-btn" id="btnDoSearch">Search</button>
                 </div>
 
+                <!-- Generic Account Avatar (Removed hardcoded name!) -->
                 <div class="user-profile">
-                    <div class="avatar">V</div>
+                    <div class="avatar" title="Account Settings">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+                    </div>
                 </div>
             </header>
 
@@ -146,9 +149,7 @@
                     <div class="section-header" style="margin-top: 1.5rem;">
                         <h2>Top Popular Tracks</h2>
                     </div>
-                    <div class="spotify-grid" id="artistTopGrid">
-                        <!-- Top artist tracks -->
-                    </div>
+                    <div class="spotify-grid" id="artistTopGrid"></div>
                 </section>
 
                 <!-- View 3: Real-Time Synchronized Lyrics View -->
@@ -226,7 +227,7 @@
                     </div>
                 </section>
 
-                <!-- View 6: Synthesizer & Sequencer Section -->
+                <!-- View 6: Synthesizer Section -->
                 <section class="section-container hidden" id="sectionSynthEngine">
                     <div class="section-header">
                         <h2>Web Audio Interactive Synthesizer & Sequencer</h2>
@@ -254,7 +255,7 @@
         </main>
     </div>
 
-    <!-- Mobile Bottom Navigation Bar -->
+    <!-- Mobile Bottom Navigation Bar (Spotify Mobile App Style) -->
     <nav class="mobile-bottom-nav">
         <a href="#" class="mobile-nav-item active" id="mNavHome">
             <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
@@ -266,7 +267,7 @@
         </a>
         <a href="#" class="mobile-nav-item" id="mNavLibrary">
             <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12z"/></svg>
-            <span>Library</span>
+            <span>Your Library</span>
         </a>
         <a href="#" class="mobile-nav-item" id="mNavLyrics">
             <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
@@ -286,7 +287,7 @@
         </div>
     </div>
 
-    <!-- Bottom Spotify Playing Bar (Mobile & Desktop Dynamic) -->
+    <!-- Spotify Player Bar (Desktop & Mobile Mini Player) -->
     <footer class="spotify-player-bar">
         <div class="now-playing-left">
             <img id="nowPlayingCover" src="synthwave_album_cover.jpg" alt="Cover" class="now-playing-thumb">
