@@ -1,4 +1,4 @@
-// Spotify Pro Audio Engine with Singer/Artist Profiles & 3 Live Spectrum Visualizers
+// Spotify Pro Dynamic Mobile & Laptop Responsive Audio Engine
 document.addEventListener('DOMContentLoaded', () => {
     // -------------------------------------------------------------
     // 1. Audio Context & 5-Band Equalizer Setup
@@ -54,7 +54,35 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // -------------------------------------------------------------
-    // 2. Playlists & Liked Songs Persistence
+    // 2. Mobile Menu & Drawer Control
+    // -------------------------------------------------------------
+    const sidebarDrawer = document.getElementById('sidebarDrawer');
+    const btnOpenMobileMenu = document.getElementById('btnOpenMobileMenu');
+    const btnCloseSidebarMobile = document.getElementById('btnCloseSidebarMobile');
+
+    if (btnOpenMobileMenu) {
+        btnOpenMobileMenu.addEventListener('click', () => {
+            sidebarDrawer.classList.add('open');
+        });
+    }
+
+    if (btnCloseSidebarMobile) {
+        btnCloseSidebarMobile.addEventListener('click', () => {
+            sidebarDrawer.classList.remove('open');
+        });
+    }
+
+    // Close drawer when clicking nav items on mobile
+    document.querySelectorAll('.nav-item, .pl-item').forEach(item => {
+        item.addEventListener('click', () => {
+            if (window.innerWidth <= 900) {
+                sidebarDrawer.classList.remove('open');
+            }
+        });
+    });
+
+    // -------------------------------------------------------------
+    // 3. Playlists & Liked Songs Persistence
     // -------------------------------------------------------------
     let likedSongs = JSON.parse(localStorage.getItem('spotify_liked_songs') || '[]');
     let userPlaylists = JSON.parse(localStorage.getItem('spotify_user_playlists') || '[]');
@@ -79,7 +107,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     updateLikedCountUI();
 
-    // Render Playlists in Sidebar
     const userPlaylistsEl = document.getElementById('userPlaylists');
 
     function renderSidebarPlaylists() {
@@ -134,7 +161,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Modal
+    // Playlist Add Modal
     const playlistModal = document.getElementById('playlistModal');
     const modalTrackTitle = document.getElementById('modalTrackTitle');
     const playlistSelectList = document.getElementById('playlistSelectList');
@@ -183,7 +210,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // -------------------------------------------------------------
-    // 3. Featured Tracks & Singer / Artist Profiles
+    // 4. Featured Tracks & Artist Profiles
     // -------------------------------------------------------------
     const defaultFeaturedTracks = [
         {
@@ -274,8 +301,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (avatarUrl) artistAvatarImg.src = avatarUrl;
         artistListeners.textContent = "18,920,410 Monthly Listeners • Verified Official Channel";
         artistBio.textContent = `${artistName} is a world-renowned music artist with millions of streams globally across all major streaming platforms and YouTube.`;
-        
-        // Search artist top tracks
         searchYouTubeForArtist(artistName || "Daft Punk");
     }
 
@@ -293,14 +318,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderArtistTopGrid(tracks) {
         artistTopGrid.innerHTML = '';
-        tracks.forEach((track, idx) => {
+        tracks.forEach((track) => {
             const card = document.createElement('div');
             card.className = 'song-card';
             card.innerHTML = `
                 <div class="card-thumb-container">
                     <img src="${track.thumbnail}" alt="${track.title}" class="card-thumb">
                     <button class="play-hover-btn" title="Play">
-                        <svg viewBox="0 0 24 24" width="26" height="26" fill="#000"><path d="M8 5v14l11-7z"/></svg>
+                        <svg viewBox="0 0 24 24" width="24" height="24" fill="#000"><path d="M8 5v14l11-7z"/></svg>
                     </button>
                 </div>
                 <div class="song-info">
@@ -348,7 +373,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="card-thumb-container">
                     <img src="${track.thumbnail}" alt="${track.title}" class="card-thumb" onerror="this.src='synthwave_album_cover.jpg'">
                     <button class="play-hover-btn" title="Play">
-                        <svg viewBox="0 0 24 24" width="26" height="26" fill="#000"><path d="M8 5v14l11-7z"/></svg>
+                        <svg viewBox="0 0 24 24" width="24" height="24" fill="#000"><path d="M8 5v14l11-7z"/></svg>
                     </button>
                 </div>
                 <div class="song-info">
@@ -358,7 +383,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             `;
             
-            // Artist click
             card.querySelector('.clickable-artist').addEventListener('click', (e) => {
                 e.stopPropagation();
                 openArtistProfile(track.uploader, track.thumbnail);
@@ -514,7 +538,7 @@ document.addEventListener('DOMContentLoaded', () => {
         updateLikedCountUI();
     });
 
-    // Timeline Scrubber
+    // Scrubber
     youtubeAudioPlayer.addEventListener('timeupdate', () => {
         if (youtubeAudioPlayer.duration) {
             const cur = youtubeAudioPlayer.currentTime;
@@ -639,9 +663,7 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast(`Equalizer Preset: ${preset.toUpperCase()}`);
     });
 
-    // -------------------------------------------------------------
-    // 14. FIX: All 3 Live Spectrum Visualizer Modes (Bars, Waveform, Cosmic)
-    // -------------------------------------------------------------
+    // Spectrum Visualizer
     const spotifyCanvas = document.getElementById('spotifyCanvas');
     const ctx = spotifyCanvas.getContext('2d');
     let visMode = 'bars';
@@ -667,7 +689,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const dataArray = new Uint8Array(bufferLength);
 
         if (visMode === 'wave') {
-            // Waveform Oscilloscope Mode
             analyserNode.getByteTimeDomainData(dataArray);
             ctx.lineWidth = 4;
             ctx.strokeStyle = '#1db954';
@@ -688,7 +709,6 @@ document.addEventListener('DOMContentLoaded', () => {
             ctx.shadowBlur = 0;
 
         } else if (visMode === 'cosmic') {
-            // Cosmic Particle Mode
             analyserNode.getByteFrequencyData(dataArray);
             const centerX = spotifyCanvas.width / 2;
             const centerY = spotifyCanvas.height / 2;
@@ -711,7 +731,6 @@ document.addEventListener('DOMContentLoaded', () => {
             ctx.shadowBlur = 0;
 
         } else {
-            // Frequency Spectrum Bars Mode
             analyserNode.getByteFrequencyData(dataArray);
             const barWidth = (spotifyCanvas.width / bufferLength) * 2.2;
             let x = 0;
@@ -738,12 +757,29 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('navEqualizer').addEventListener('click', (e) => { e.preventDefault(); setActiveNav('navEqualizer'); showSection('equalizer'); });
     document.getElementById('navSynth').addEventListener('click', (e) => { e.preventDefault(); setActiveNav('navSynth'); showSection('synth'); });
 
+    // Mobile Navigation Bar Events
+    const mNavHome = document.getElementById('mNavHome');
+    const mNavSearch = document.getElementById('mNavSearch');
+    const mNavLibrary = document.getElementById('mNavLibrary');
+    const mNavLyrics = document.getElementById('mNavLyrics');
+
+    if (mNavHome) mNavHome.addEventListener('click', (e) => { e.preventDefault(); setMobileNavActive(mNavHome); showSection('search'); renderSongsGrid(defaultFeaturedTracks); });
+    if (mNavSearch) mNavSearch.addEventListener('click', (e) => { e.preventDefault(); setMobileNavActive(mNavSearch); showSection('search'); ytSearchInput.focus(); });
+    if (mNavLibrary) mNavLibrary.addEventListener('click', (e) => { e.preventDefault(); setMobileNavActive(mNavLibrary); showSection('search'); searchHeading.textContent = "Your Liked Songs Library"; currentTrackList = [...likedSongs]; renderSongsGrid(currentTrackList); });
+    if (mNavLyrics) mNavLyrics.addEventListener('click', (e) => { e.preventDefault(); setMobileNavActive(mNavLyrics); showSection('lyrics'); });
+
+    function setMobileNavActive(element) {
+        document.querySelectorAll('.mobile-nav-item').forEach(el => el.classList.remove('active'));
+        if (element) element.classList.add('active');
+    }
+
     document.getElementById('plLiked').addEventListener('click', () => { setActivePlaylistItem(document.getElementById('plLiked')); showSection('search'); searchHeading.textContent = "Your Liked Songs Library"; currentTrackList = [...likedSongs]; renderSongsGrid(currentTrackList); });
     document.getElementById('plTrending').addEventListener('click', () => { setActivePlaylistItem(document.getElementById('plTrending')); showSection('search'); searchYouTube('trending music songs 2026'); });
 
     function setActiveNav(id) {
         document.querySelectorAll('.nav-item').forEach(a => a.classList.remove('active'));
-        document.getElementById(id).classList.add('active');
+        const el = document.getElementById(id);
+        if (el) el.classList.add('active');
     }
 
     function setActivePlaylistItem(item) {
@@ -784,7 +820,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('chipLiked').addEventListener('click', () => { showSection('search'); searchHeading.textContent = "Your Liked Songs Library"; currentTrackList = [...likedSongs]; renderSongsGrid(currentTrackList); });
     document.getElementById('chipVisualizer').addEventListener('click', () => showSection('visualizer'));
 
-    // Init
+    // Commit new changes to Git
     renderSongsGrid(defaultFeaturedTracks);
     drawSpotifyVisualizer();
 });
