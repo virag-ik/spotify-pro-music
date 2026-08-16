@@ -373,7 +373,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (playHistory.length > 50) playHistory.pop();
         localStorage.setItem('spotify_play_history', JSON.stringify(playHistory));
         updateHistoryCountUI();
-        renderHomePageSections();
+        
+        // Update history UI without overwriting the current view (like search results)
+        renderHistoryGrid();
+        renderHorizontalTrackRow(document.getElementById('recentHomeGrid'), playHistory);
     }
 
     // Universal Horizontal Track Row Renderer
@@ -1033,7 +1036,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         localStorage.setItem('spotify_liked_songs', JSON.stringify(likedSongs));
         updateLikedCountUI();
-        renderHomePageSections();
+        
+        // Update liked UI without overwriting the current view
+        renderHorizontalTrackRow(document.getElementById('likedHomeGrid'), likedSongs);
     }
 
     btnLikeTrack.addEventListener('click', (e) => { e.stopPropagation(); toggleLikeCurrentTrack(); });
