@@ -331,8 +331,8 @@
         </div>
     </div>
 
-    <!-- Active Off-Screen YouTube Player Container (200px canvas offscreen satisfies Chrome Desktop Autoplay Engine) -->
-    <div id="ytPlayerContainer" style="position: fixed; bottom: -300px; right: -300px; width: 200px; height: 200px; opacity: 0.01; pointer-events: none; z-index: -1; overflow: hidden;">
+    <!-- YouTube Player Container: MUST be inside viewport for Chrome Desktop to keep iframe rendering active -->
+    <div id="ytPlayerContainer" style="position: fixed; bottom: 0; right: 0; width: 200px; height: 200px; opacity: 0.01; pointer-events: none; z-index: -1; overflow: hidden;">
         <div id="clientYtFrame"></div>
     </div>
 

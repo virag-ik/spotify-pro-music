@@ -11,21 +11,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const youtubeAudioPlayer = document.getElementById('youtubeAudioPlayer');
 
-    // 1-second silent WAV audio data URL for mobile background audio focus keep-alive
-    const silentWavBase64 = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==";
+    // Background audio keep-alive: plays near-inaudible tone through AudioContext
+    // to maintain Android Chrome audio session when the tab is backgrounded.
+    let bgKeepAliveOsc = null;
+    let bgKeepAliveGain = null;
 
     function ensureBackgroundAudioKeepAlive() {
-        if (youtubeAudioPlayer) {
-            try {
-                if (!youtubeAudioPlayer.src || youtubeAudioPlayer.src !== silentWavBase64) {
-                    youtubeAudioPlayer.src = silentWavBase64;
-                    youtubeAudioPlayer.loop = true;
-                }
-                if (youtubeAudioPlayer.paused) {
-                    youtubeAudioPlayer.play().catch(() => {});
-                }
-            } catch (e) {}
-        }
+        if (!audioCtx) return;
+        if (bgKeepAliveOsc) return; // already running
+        try {
+            bgKeepAliveGain = audioCtx.createGain();
+            bgKeepAliveGain.gain.value = 0.001; // inaudible
+            bgKeepAliveGain.connect(audioCtx.destination);
+
+            bgKeepAliveOsc = audioCtx.createOscillator();
+            bgKeepAliveOsc.frequency.value = 1; // 1 Hz — below human hearing
+            bgKeepAliveOsc.connect(bgKeepAliveGain);
+            bgKeepAliveOsc.start();
+        } catch (e) {}
     }
 
     function initAudioEngine() {
@@ -126,6 +129,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // -------------------------------------------------------------
     let ytClientPlayer = null;
     let isClientPlayerActive = false;
+    let ytPlayerReady = false;
+    let pendingVideoId = null;
 
     function initYTPlayer() {
         if (ytClientPlayer || typeof YT === 'undefined' || !YT.Player) return;
@@ -143,12 +148,25 @@ document.addEventListener('DOMContentLoaded', () => {
                     'enablejsapi': 1
                 },
                 events: {
+                    'onReady': onPlayerReady,
                     'onStateChange': onClientPlayerStateChange,
                     'onError': onClientPlayerError
                 }
             });
         } catch (e) {
             console.error("YT Player init error:", e);
+        }
+    }
+
+    function onPlayerReady() {
+        ytPlayerReady = true;
+        console.log("YouTube IFrame Player ready");
+        if (pendingVideoId) {
+            const vid = pendingVideoId;
+            pendingVideoId = null;
+            ytClientPlayer.loadVideoById(vid);
+            ytClientPlayer.playVideo();
+            setPlayState(true);
         }
     }
 
@@ -186,13 +204,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Tab visibility listener for persistent mobile background play
     document.addEventListener('visibilitychange', () => {
-        if (document.hidden && isPlaying && isClientPlayerActive && ytClientPlayer) {
+        if (!isPlaying || !isClientPlayerActive || !ytClientPlayer) return;
+
+        if (document.hidden) {
+            // Tab going to background — keep audio context alive
+            if (audioCtx && audioCtx.state === 'suspended') {
+                audioCtx.resume().catch(() => {});
+            }
             ensureBackgroundAudioKeepAlive();
-            setTimeout(() => {
-                if (ytClientPlayer && typeof ytClientPlayer.playVideo === 'function') {
-                    ytClientPlayer.playVideo();
-                }
-            }, 100);
+        } else {
+            // Tab returning to foreground — force resume if it was paused by the browser
+            if (audioCtx && audioCtx.state === 'suspended') {
+                audioCtx.resume().catch(() => {});
+            }
+            if (typeof ytClientPlayer.playVideo === 'function') {
+                ytClientPlayer.playVideo();
+            }
         }
     });
 
@@ -801,18 +828,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function playViaClientYTPlayer(videoId) {
         isClientPlayerActive = true;
-        youtubeAudioPlayer.pause();
         ensureBackgroundAudioKeepAlive();
 
         initYTPlayer();
-        if (ytClientPlayer && typeof ytClientPlayer.loadVideoById === 'function') {
+        if (ytPlayerReady && ytClientPlayer && typeof ytClientPlayer.loadVideoById === 'function') {
             ytClientPlayer.loadVideoById(videoId);
-            if (typeof ytClientPlayer.playVideo === 'function') {
-                ytClientPlayer.playVideo();
-            }
+            ytClientPlayer.playVideo();
             setPlayState(true);
         } else {
-            setTimeout(() => playViaClientYTPlayer(videoId), 300);
+            // Player not ready yet — queue the video and onPlayerReady will pick it up
+            pendingVideoId = videoId;
+            setPlayState(true);
         }
     }
 
