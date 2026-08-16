@@ -1322,10 +1322,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // -------------------------------------------------------------
     // 10. Navigation & Section Switching
     // -------------------------------------------------------------
-    document.getElementById('navHome').addEventListener('click', (e) => { e.preventDefault(); setActiveNav('navHome'); showSection('search'); renderSongsGrid(defaultFeaturedTracks); });
-    document.getElementById('navSearch').addEventListener('click', (e) => { e.preventDefault(); setActiveNav('navSearch'); showSection('search'); ytSearchInput.focus(); });
-    document.getElementById('navHistory').addEventListener('click', (e) => { e.preventDefault(); setActiveNav('navHistory'); showSection('history'); renderHistoryGrid(); });
-    document.getElementById('navLibrary').addEventListener('click', (e) => { e.preventDefault(); setActiveNav('navLibrary'); showSection('search'); searchHeading.textContent = "Your Liked Songs Library"; currentTrackList = [...likedSongs]; renderSongsGrid(currentTrackList); });
+    document.getElementById('navHome').addEventListener('click', (e) => { e.preventDefault(); setActiveNav('navHome'); showSection('search'); renderSongsGrid(defaultFeaturedTracks); setChipActive('chipAll'); });
+    document.getElementById('navSearch').addEventListener('click', (e) => { e.preventDefault(); setActiveNav('navSearch'); showSection('search'); ytSearchInput.focus(); setChipActive('chipAll'); });
+    document.getElementById('navHistory').addEventListener('click', (e) => { e.preventDefault(); setActiveNav('navHistory'); showSection('history'); renderHistoryGrid(); setChipActive('chipHistory'); });
+    document.getElementById('navLibrary').addEventListener('click', (e) => { e.preventDefault(); setActiveNav('navLibrary'); showSection('search'); searchHeading.textContent = "Your Liked Songs Library"; currentTrackList = [...likedSongs]; renderSongsGrid(currentTrackList); setChipActive('chipLiked'); });
     document.getElementById('navLyrics').addEventListener('click', (e) => { e.preventDefault(); setActiveNav('navLyrics'); showSection('lyrics'); });
     document.getElementById('navEqualizer').addEventListener('click', (e) => { e.preventDefault(); setActiveNav('navEqualizer'); showSection('equalizer'); });
     document.getElementById('navSynth').addEventListener('click', (e) => { e.preventDefault(); setActiveNav('navSynth'); showSection('synth'); });
@@ -1336,9 +1336,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const mNavLibrary = document.getElementById('mNavLibrary');
     const mNavLyrics = document.getElementById('mNavLyrics');
 
-    if (mNavHome) mNavHome.addEventListener('click', (e) => { e.preventDefault(); setMobileNavActive(mNavHome); showSection('search'); renderSongsGrid(defaultFeaturedTracks); });
-    if (mNavSearch) mNavSearch.addEventListener('click', (e) => { e.preventDefault(); setMobileNavActive(mNavSearch); showSection('search'); ytSearchInput.focus(); });
-    if (mNavLibrary) mNavLibrary.addEventListener('click', (e) => { e.preventDefault(); setMobileNavActive(mNavLibrary); showSection('search'); searchHeading.textContent = "Your Liked Songs Library"; currentTrackList = [...likedSongs]; renderSongsGrid(currentTrackList); });
+    if (mNavHome) mNavHome.addEventListener('click', (e) => { e.preventDefault(); setMobileNavActive(mNavHome); showSection('search'); renderSongsGrid(defaultFeaturedTracks); setChipActive('chipAll'); });
+    if (mNavSearch) mNavSearch.addEventListener('click', (e) => { e.preventDefault(); setMobileNavActive(mNavSearch); showSection('search'); ytSearchInput.focus(); setChipActive('chipAll'); });
+    if (mNavLibrary) mNavLibrary.addEventListener('click', (e) => { e.preventDefault(); setMobileNavActive(mNavLibrary); showSection('search'); searchHeading.textContent = "Your Liked Songs Library"; currentTrackList = [...likedSongs]; renderSongsGrid(currentTrackList); setChipActive('chipLiked'); });
     if (mNavLyrics) mNavLyrics.addEventListener('click', (e) => { e.preventDefault(); setMobileNavActive(mNavLyrics); showSection('lyrics'); });
 
     function setMobileNavActive(element) {
@@ -1346,9 +1346,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (element) element.classList.add('active');
     }
 
-    document.getElementById('plLiked').addEventListener('click', () => { setActivePlaylistItem(document.getElementById('plLiked')); showSection('search'); searchHeading.textContent = "Your Liked Songs Library"; currentTrackList = [...likedSongs]; renderSongsGrid(currentTrackList); });
-    document.getElementById('plHistory').addEventListener('click', () => { setActivePlaylistItem(document.getElementById('plHistory')); showSection('history'); renderHistoryGrid(); });
-    document.getElementById('plTrending').addEventListener('click', () => { setActivePlaylistItem(document.getElementById('plTrending')); showSection('search'); searchYouTube('trending music songs 2026'); });
+    document.getElementById('plLiked').addEventListener('click', () => { setActivePlaylistItem(document.getElementById('plLiked')); showSection('search'); searchHeading.textContent = "Your Liked Songs Library"; currentTrackList = [...likedSongs]; renderSongsGrid(currentTrackList); setChipActive('chipLiked'); });
+    document.getElementById('plHistory').addEventListener('click', () => { setActivePlaylistItem(document.getElementById('plHistory')); showSection('history'); renderHistoryGrid(); setChipActive('chipHistory'); });
+    document.getElementById('plTrending').addEventListener('click', () => { setActivePlaylistItem(document.getElementById('plTrending')); showSection('search'); searchYouTube('trending music songs 2026'); setChipActive('chipYouTube'); });
     document.getElementById('plSynth').addEventListener('click', () => { setActivePlaylistItem(document.getElementById('plSynth')); showSection('synth'); });
 
     function setActiveNav(id) {
@@ -1362,13 +1362,21 @@ document.addEventListener('DOMContentLoaded', () => {
         if (item) item.classList.add('active');
     }
 
+    function setChipActive(chipId) {
+        document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+        const chip = document.getElementById(chipId);
+        if (chip) chip.classList.add('active');
+    }
+
     btnToggleVisView.addEventListener('click', () => {
         if (sectionVisualizer.classList.contains('hidden')) {
             showSection('visualizer');
             btnToggleVisView.classList.add('active');
+            setChipActive('chipVisualizer');
         } else {
             showSection('search');
             btnToggleVisView.classList.remove('active');
+            setChipActive('chipAll');
         }
     });
 
@@ -1388,15 +1396,19 @@ document.addEventListener('DOMContentLoaded', () => {
         else if (section === 'synth') sectionSynthEngine.classList.remove('hidden');
         else if (section === 'history') sectionHistory.classList.remove('hidden');
         else sectionSearchResults.classList.remove('hidden');
+
+        // Scroll back to top smoothly when switching sections
+        const contentScroll = document.querySelector('.content-scrollable');
+        if (contentScroll) contentScroll.scrollTop = 0;
     }
 
     // Filter Chips
-    document.getElementById('chipAll').addEventListener('click', () => { showSection('search'); currentTrackList = [...defaultFeaturedTracks]; renderSongsGrid(currentTrackList); });
-    document.getElementById('chipHistory').addEventListener('click', () => { showSection('history'); renderHistoryGrid(); });
-    document.getElementById('chipYouTube').addEventListener('click', () => { showSection('search'); searchYouTube('trending music songs 2026'); });
-    document.getElementById('chipArtist').addEventListener('click', () => openArtistProfile(currentPlayingTrack.uploader, currentPlayingTrack.thumbnail));
-    document.getElementById('chipLiked').addEventListener('click', () => { showSection('search'); searchHeading.textContent = "Your Liked Songs Library"; currentTrackList = [...likedSongs]; renderSongsGrid(currentTrackList); });
-    document.getElementById('chipVisualizer').addEventListener('click', () => showSection('visualizer'));
+    document.getElementById('chipAll').addEventListener('click', () => { setChipActive('chipAll'); showSection('search'); currentTrackList = [...defaultFeaturedTracks]; renderSongsGrid(currentTrackList); });
+    document.getElementById('chipHistory').addEventListener('click', () => { setChipActive('chipHistory'); showSection('history'); renderHistoryGrid(); });
+    document.getElementById('chipYouTube').addEventListener('click', () => { setChipActive('chipYouTube'); showSection('search'); searchYouTube('trending music songs 2026'); });
+    document.getElementById('chipArtist').addEventListener('click', () => { setChipActive('chipArtist'); openArtistProfile(currentPlayingTrack.uploader, currentPlayingTrack.thumbnail); });
+    document.getElementById('chipLiked').addEventListener('click', () => { setChipActive('chipLiked'); showSection('search'); searchHeading.textContent = "Your Liked Songs Library"; currentTrackList = [...likedSongs]; renderSongsGrid(currentTrackList); });
+    document.getElementById('chipVisualizer').addEventListener('click', () => { setChipActive('chipVisualizer'); showSection('visualizer'); });
 
     // Init
     renderSongsGrid(defaultFeaturedTracks);

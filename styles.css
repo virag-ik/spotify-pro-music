@@ -1282,38 +1282,75 @@ canvas#spotifyCanvas {
     }
 
     .content-scrollable {
-        padding-bottom: 140px;
+        padding: 0.8rem 0.8rem 140px 0.8rem;
     }
 
-    /* Spotify Compact Song Cards on Mobile (< 768px) */
+    /* Sticky, Sleek Filter Chips Bar on Mobile */
+    .filter-chips {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        background: rgba(18, 18, 18, 0.96);
+        backdrop-filter: blur(12px);
+        padding: 0.4rem 0 0.5rem 0;
+        margin-bottom: 0.6rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        gap: 0.4rem;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .chip {
+        padding: 0.32rem 0.75rem;
+        font-size: 0.72rem;
+        border-radius: 16px;
+        flex-shrink: 0;
+    }
+
+    .section-container {
+        padding-top: 0.2rem;
+    }
+
+    /* Small, Sleek Compact Song Cards on Mobile (< 768px) */
     .spotify-grid {
-        grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-        gap: 0.6rem;
+        grid-template-columns: repeat(auto-fill, minmax(105px, 1fr));
+        gap: 0.5rem;
     }
 
     .song-card {
-        padding: 0.5rem;
-        gap: 0.4rem;
+        padding: 0.4rem;
+        gap: 0.35rem;
         border-radius: 6px;
     }
 
+    .card-thumb-container {
+        border-radius: 4px;
+    }
+
     .card-title {
-        font-size: 0.78rem;
+        font-size: 0.72rem;
+        line-height: 1.15;
+        font-weight: 700;
+        margin-top: 2px;
     }
 
     .card-artist {
-        font-size: 0.68rem;
-    }
-
-    .card-duration {
         font-size: 0.62rem;
     }
 
+    .card-duration {
+        font-size: 0.56rem;
+    }
+
     .play-hover-btn {
-        width: 32px;
-        height: 32px;
-        bottom: 6px;
-        right: 6px;
+        width: 28px;
+        height: 28px;
+        bottom: 4px;
+        right: 4px;
+    }
+
+    .play-hover-btn svg {
+        width: 16px;
+        height: 16px;
     }
 
     /* Spotify Floating Mobile Mini Player Bar */
@@ -1434,8 +1471,8 @@ canvas#spotifyCanvas {
 
 @media (max-width: 480px) {
     .spotify-grid {
-        grid-template-columns: repeat(2, 1fr);
-        gap: 0.5rem;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 0.4rem;
     }
 
     .equalizer-grid {
@@ -1450,5 +1487,12 @@ canvas#spotifyCanvas {
 
     .eq-band input[type=range] {
         height: 80px;
+    }
+}
+
+@media (max-width: 350px) {
+    .spotify-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.4rem;
     }
 }
