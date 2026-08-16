@@ -197,6 +197,13 @@ document.addEventListener('DOMContentLoaded', () => {
     let isAudioElementPlaying = false;
 
     // Audio element event handlers for track end and error
+    youtubeAudioPlayer.addEventListener('play', () => {
+        if (isAudioElementPlaying) setPlayState(true);
+    });
+
+    youtubeAudioPlayer.addEventListener('pause', () => {
+        if (isAudioElementPlaying) setPlayState(false);
+    });
     youtubeAudioPlayer.addEventListener('ended', () => {
         if (isAudioElementPlaying) {
             if (isLoop && currentPlayingTrack) {
@@ -802,8 +809,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
 
                 // Lockscreen & Notification Media Action Listeners
-                navigator.mediaSession.setActionHandler('play', () => togglePlayPause());
-                navigator.mediaSession.setActionHandler('pause', () => togglePlayPause());
+                navigator.mediaSession.setActionHandler('play', () => {
+                    if (youtubeAudioPlayer && youtubeAudioPlayer.src) {
+                        youtubeAudioPlayer.play().catch(() => {});
+                    } else if (isClientPlayerActive && ytClientPlayer && typeof ytClientPlayer.playVideo === 'function') {
+                        ytClientPlayer.playVideo();
+                    }
+                    setPlayState(true);
+                });
+                navigator.mediaSession.setActionHandler('pause', () => {
+                    if (youtubeAudioPlayer && !youtubeAudioPlayer.paused) {
+                        youtubeAudioPlayer.pause();
+                    } else if (isClientPlayerActive && ytClientPlayer && typeof ytClientPlayer.pauseVideo === 'function') {
+                        ytClientPlayer.pauseVideo();
+                    }
+                    setPlayState(false);
+                });
                 navigator.mediaSession.setActionHandler('previoustrack', () => playPrevTrack());
                 navigator.mediaSession.setActionHandler('nexttrack', () => playNextTrack());
             } catch (e) {
