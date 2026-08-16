@@ -367,7 +367,7 @@ body {
     padding: 1rem 1.25rem 2rem 1.25rem;
     display: flex;
     flex-direction: column;
-    gap: 1.25rem;
+    gap: 1rem;
     position: relative;
     z-index: 1;
 }
@@ -377,6 +377,9 @@ body {
     gap: 0.5rem;
     overflow-x: auto;
     padding-bottom: 0.25rem;
+    position: relative;
+    z-index: 2;
+    flex-shrink: 0;
 }
 
 .filter-chips::-webkit-scrollbar {
@@ -393,6 +396,7 @@ body {
     font-weight: 600;
     cursor: pointer;
     white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .chip.active {
@@ -1314,17 +1318,16 @@ canvas#spotifyCanvas {
         padding: 0.6rem 0.6rem 140px 0.6rem;
     }
 
-    /* Sticky, Sleek Filter Chips Bar on Mobile */
+    /* Clean Non-Sticky Filter Chips Bar on Mobile */
     .filter-chips {
-        position: sticky;
-        top: 0;
-        z-index: 20;
-        background: rgba(18, 18, 18, 0.96);
-        backdrop-filter: blur(12px);
-        padding: 0.4rem 0 0.5rem 0;
+        position: relative;
+        z-index: 2;
+        background: transparent;
+        padding: 0.2rem 0 0.4rem 0;
         margin-bottom: 0.6rem;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
         gap: 0.4rem;
+        flex-shrink: 0;
+        overflow-x: auto;
         -webkit-overflow-scrolling: touch;
     }
 
