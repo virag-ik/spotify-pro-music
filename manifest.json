@@ -1,0 +1,18 @@
+{
+  "name": "Spotify Pro",
+  "short_name": "SpotifyPro",
+  "description": "Ad-Free Music Player",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#121212",
+  "theme_color": "#121212",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "synthwave_album_cover.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    }
+  ]
+}
