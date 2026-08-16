@@ -17,18 +17,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let bgKeepAliveGain = null;
 
     function ensureBackgroundAudioKeepAlive() {
-        if (!audioCtx) return;
-        if (bgKeepAliveOsc) return; // already running
-        try {
-            bgKeepAliveGain = audioCtx.createGain();
-            bgKeepAliveGain.gain.value = 0.001; // inaudible
-            bgKeepAliveGain.connect(audioCtx.destination);
-
-            bgKeepAliveOsc = audioCtx.createOscillator();
-            bgKeepAliveOsc.frequency.value = 1; // 1 Hz — below human hearing
-            bgKeepAliveOsc.connect(bgKeepAliveGain);
-            bgKeepAliveOsc.start();
-        } catch (e) {}
+        // Removed: Native HTML5 <audio> tag with a direct stream handles background play natively.
+        // The oscillator interfered with the Android notification pause button.
+        return;
     }
 
     function initAudioEngine() {
