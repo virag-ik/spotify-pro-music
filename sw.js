@@ -1,4 +1,4 @@
-const CACHE_NAME = 'spotify-pro-cache-v3';
+const CACHE_NAME = 'spotify-pro-cache-v4';
 const urlsToCache = [
   '/',
   '/index.html',
