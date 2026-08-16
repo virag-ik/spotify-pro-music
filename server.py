@@ -132,6 +132,11 @@ def get_audio_stream_url(video_id):
                 'no_warnings': True,
                 'nocheckcertificate': True,
                 'skip_download': True,
+                'extractor_args': {
+                    'youtube': {
+                        'client': ['android', 'ios']
+                    }
+                },
                 'http_headers': {
                     'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15',
                 }
