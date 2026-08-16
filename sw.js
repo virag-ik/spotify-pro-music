@@ -1,11 +1,11 @@
-const CACHE_NAME = 'spotify-pro-cache-v2';
+const CACHE_NAME = 'spotify-pro-cache-v3';
 const urlsToCache = [
   '/',
   '/index.html',
   '/styles.css',
   '/app.js',
   '/manifest.json',
-  '/icon.svg'
+  '/icon.jpg'
 ];
 
 self.addEventListener('install', event => {
