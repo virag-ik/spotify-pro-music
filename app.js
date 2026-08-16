@@ -1,7 +1,7 @@
-// Spotify Pro Dynamic Audio Engine (Cloud Render Hybrid Streaming + Mobile App UI)
+// Spotify PRO Dynamic Audio Engine & Application Logic
 document.addEventListener('DOMContentLoaded', () => {
     // -------------------------------------------------------------
-    // 1. Audio Context & Equalizer Setup
+    // 1. Audio Context & Master Equalizer Setup
     // -------------------------------------------------------------
     let audioCtx = null;
     let masterGain = null;
@@ -13,67 +13,135 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function initAudioEngine() {
         if (!audioCtx) {
-            const AudioContext = window.AudioContext || window.webkitAudioContext;
-            audioCtx = new AudioContext();
-
-            masterGain = audioCtx.createGain();
-            masterGain.gain.value = 0.8;
-
-            analyserNode = audioCtx.createAnalyser();
-            analyserNode.fftSize = 128;
-
-            const freqs = [60, 230, 910, 4000, 14000];
-            const types = ['lowshelf', 'peaking', 'peaking', 'peaking', 'highshelf'];
-
-            eqFilters = freqs.map((f, i) => {
-                const filter = audioCtx.createBiquadFilter();
-                filter.type = types[i];
-                filter.frequency.value = f;
-                filter.gain.value = 0;
-                return filter;
-            });
-
-            for (let i = 0; i < eqFilters.length - 1; i++) {
-                eqFilters[i].connect(eqFilters[i + 1]);
-            }
-
             try {
-                audioSourceNode = audioCtx.createMediaElementSource(youtubeAudioPlayer);
-                audioSourceNode.connect(eqFilters[0]);
-                eqFilters[eqFilters.length - 1].connect(masterGain);
-            } catch (err) {
-                console.log("Audio source note:", err);
-            }
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                audioCtx = new AudioContext();
 
-            masterGain.connect(analyserNode);
-            analyserNode.connect(audioCtx.destination);
+                masterGain = audioCtx.createGain();
+                masterGain.gain.value = 0.8;
+
+                analyserNode = audioCtx.createAnalyser();
+                analyserNode.fftSize = 128;
+
+                const freqs = [60, 230, 910, 4000, 14000];
+                const types = ['lowshelf', 'peaking', 'peaking', 'peaking', 'highshelf'];
+
+                eqFilters = freqs.map((f, i) => {
+                    const filter = audioCtx.createBiquadFilter();
+                    filter.type = types[i];
+                    filter.frequency.value = f;
+                    filter.gain.value = 0;
+                    return filter;
+                });
+
+                for (let i = 0; i < eqFilters.length - 1; i++) {
+                    eqFilters[i].connect(eqFilters[i + 1]);
+                }
+
+                try {
+                    audioSourceNode = audioCtx.createMediaElementSource(youtubeAudioPlayer);
+                    audioSourceNode.connect(eqFilters[0]);
+                    eqFilters[eqFilters.length - 1].connect(masterGain);
+                } catch (err) {
+                    console.log("Audio media element connection note:", err);
+                }
+
+                masterGain.connect(analyserNode);
+                analyserNode.connect(audioCtx.destination);
+            } catch (e) {
+                console.error("Audio Context initialization failed:", e);
+            }
         }
-        if (audioCtx.state === 'suspended') {
+        if (audioCtx && audioCtx.state === 'suspended') {
             audioCtx.resume();
         }
     }
 
+    // Synthesize procedural note for piano & built-in tracks
+    function playSynthNote(freq, duration = 0.5, type = 'sawtooth') {
+        initAudioEngine();
+        if (!audioCtx) return;
+        try {
+            const osc = audioCtx.createOscillator();
+            const noteGain = audioCtx.createGain();
+            const filter = audioCtx.createBiquadFilter();
+
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+
+            filter.type = 'lowpass';
+            filter.frequency.setValueAtTime(1200, audioCtx.currentTime);
+            filter.Q.setValueAtTime(3, audioCtx.currentTime);
+
+            noteGain.gain.setValueAtTime(0.4, audioCtx.currentTime);
+            noteGain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+
+            osc.connect(filter);
+            filter.connect(masterGain || audioCtx.destination);
+
+            osc.start();
+            osc.stop(audioCtx.currentTime + duration);
+        } catch (e) {
+            console.error("Synth note error:", e);
+        }
+    }
+
+    // Built-in Synthwave track sound loop generator
+    let synthLoopTimer = null;
+    function playBuiltinSynthTrack() {
+        initAudioEngine();
+        const notes = [261.63, 329.63, 392.00, 493.88, 523.25, 493.88, 392.00, 329.63];
+        let idx = 0;
+        if (synthLoopTimer) clearInterval(synthLoopTimer);
+        setPlayState(true);
+        synthLoopTimer = setInterval(() => {
+            if (!isPlaying || currentPlayingTrack.isYouTube) {
+                clearInterval(synthLoopTimer);
+                return;
+            }
+            playSynthNote(notes[idx % notes.length], 0.3, 'sawtooth');
+            idx++;
+        }, 300);
+    }
+
     // -------------------------------------------------------------
-    // 2. Client YouTube IFrame Player (100% Failproof on Cloud & Local)
+    // 2. YouTube Client IFrame Player Initialization & Error Handling
     // -------------------------------------------------------------
     let ytClientPlayer = null;
     let isClientPlayerActive = false;
 
+    function initYTPlayer() {
+        if (ytClientPlayer || typeof YT === 'undefined' || !YT.Player) return;
+        try {
+            ytClientPlayer = new YT.Player('clientYtFrame', {
+                height: '1',
+                width: '1',
+                videoId: '',
+                playerVars: {
+                    'autoplay': 1,
+                    'controls': 0,
+                    'playsinline': 1,
+                    'rel': 0,
+                    'modestbranding': 1,
+                    'enablejsapi': 1
+                },
+                events: {
+                    'onStateChange': onClientPlayerStateChange,
+                    'onError': onClientPlayerError
+                }
+            });
+        } catch (e) {
+            console.error("YT Player init error:", e);
+        }
+    }
+
     window.onYouTubeIframeAPIReady = function() {
-        ytClientPlayer = new YT.Player('clientYtFrame', {
-            height: '1',
-            width: '1',
-            videoId: '',
-            playerVars: {
-                'autoplay': 1,
-                'controls': 0,
-                'playsinline': 1
-            },
-            events: {
-                'onStateChange': onClientPlayerStateChange
-            }
-        });
+        initYTPlayer();
     };
+
+    if (window.YT && window.YT.Player) {
+        initYTPlayer();
+    }
 
     function onClientPlayerStateChange(event) {
         if (event.data === YT.PlayerState.PLAYING) {
@@ -90,6 +158,31 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // Automatic Error Recovery on restricted/blocked video embedding
+    async function onClientPlayerError(event) {
+        console.warn("YouTube Player error code:", event.data);
+        if (event.data === 101 || event.data === 150 || event.data === 100 || event.data === 2) {
+            showToast("Embedding restricted. Auto-switching to audio stream...");
+            if (currentPlayingTrack) {
+                try {
+                    const fallbackQuery = `${currentPlayingTrack.uploader} ${currentPlayingTrack.title} audio`;
+                    const resp = await fetch(`/api/search?q=${encodeURIComponent(fallbackQuery)}`);
+                    const data = await resp.json();
+                    if (data.results && data.results.length > 0) {
+                        const altTrack = data.results.find(r => r.id !== currentPlayingTrack.id) || data.results[0];
+                        if (altTrack) {
+                            showToast(`Playing alternative version: ${altTrack.title}`);
+                            playViaClientYTPlayer(altTrack.id);
+                            return;
+                        }
+                    }
+                } catch (err) {
+                    console.error("Fallback search failed:", err);
+                }
+            }
+        }
+    }
+
     // Scrubber update timer
     setInterval(() => {
         if (isClientPlayerActive && ytClientPlayer && ytClientPlayer.getCurrentTime) {
@@ -97,9 +190,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 const cur = ytClientPlayer.getCurrentTime() || 0;
                 const dur = ytClientPlayer.getDuration() || 0;
                 if (dur > 0) {
-                    scrubberFill.style.width = `${(cur / dur) * 100}%`;
-                    barCurrentTime.textContent = formatSecs(cur);
-                    barDurationTime.textContent = formatSecs(dur);
+                    const pct = `${(cur / dur) * 100}%`;
+                    scrubberFill.style.width = pct;
+                    if (mPlayerScrubberFill) mPlayerScrubberFill.style.width = pct;
+
+                    const curStr = formatSecs(cur);
+                    const durStr = formatSecs(dur);
+
+                    barCurrentTime.textContent = curStr;
+                    barDurationTime.textContent = durStr;
+                    if (mPlayerCurrentTime) mPlayerCurrentTime.textContent = curStr;
+                    if (mPlayerDurationTime) mPlayerDurationTime.textContent = durStr;
+
                     highlightLyricsLine(cur, dur);
                 }
             } catch (e) {}
@@ -114,13 +216,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnCloseSidebarMobile = document.getElementById('btnCloseSidebarMobile');
 
     if (btnOpenMobileMenu) {
-        btnOpenMobileMenu.addEventListener('click', () => {
+        btnOpenMobileMenu.addEventListener('click', (e) => {
+            e.stopPropagation();
             sidebarDrawer.classList.add('open');
         });
     }
 
     if (btnCloseSidebarMobile) {
-        btnCloseSidebarMobile.addEventListener('click', () => {
+        btnCloseSidebarMobile.addEventListener('click', (e) => {
+            e.stopPropagation();
             sidebarDrawer.classList.remove('open');
         });
     }
@@ -134,10 +238,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // -------------------------------------------------------------
-    // 4. Playlists & Liked Songs Persistence
+    // 4. Playlists, Liked Songs & Song Play History Persistence
     // -------------------------------------------------------------
     let likedSongs = JSON.parse(localStorage.getItem('spotify_liked_songs') || '[]');
     let userPlaylists = JSON.parse(localStorage.getItem('spotify_user_playlists') || '[]');
+    let playHistory = JSON.parse(localStorage.getItem('spotify_play_history') || '[]');
 
     if (userPlaylists.length === 0) {
         userPlaylists = [
@@ -155,9 +260,81 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateLikedCountUI() {
-        document.getElementById('likedCount').textContent = likedSongs.length;
+        const el = document.getElementById('likedCount');
+        if (el) el.textContent = likedSongs.length;
     }
     updateLikedCountUI();
+
+    function updateHistoryCountUI() {
+        const el = document.getElementById('historyCount');
+        if (el) el.textContent = playHistory.length;
+    }
+    updateHistoryCountUI();
+
+    function addToPlayHistory(track) {
+        if (!track) return;
+        playHistory = playHistory.filter(t => t.id !== track.id);
+        playHistory.unshift({
+            ...track,
+            playedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        });
+        if (playHistory.length > 50) playHistory.pop();
+        localStorage.setItem('spotify_play_history', JSON.stringify(playHistory));
+        updateHistoryCountUI();
+    }
+
+    function renderHistoryGrid() {
+        const historyGrid = document.getElementById('historyGrid');
+        if (!historyGrid) return;
+        historyGrid.innerHTML = '';
+        if (playHistory.length === 0) {
+            historyGrid.innerHTML = '<div style="color:var(--text-sub); grid-column: 1/-1; text-align:center; padding:3rem;">No listening history yet. Play any song to track it here!</div>';
+            return;
+        }
+
+        playHistory.forEach((track, idx) => {
+            const card = document.createElement('div');
+            card.className = 'song-card';
+            card.innerHTML = `
+                <div class="card-thumb-container">
+                    <img src="${track.thumbnail}" alt="${track.title}" class="card-thumb" onerror="this.src='synthwave_album_cover.jpg'">
+                    <button class="play-hover-btn" title="Play">
+                        <svg viewBox="0 0 24 24" width="24" height="24" fill="#000"><path d="M8 5v14l11-7z"/></svg>
+                    </button>
+                </div>
+                <div class="song-info">
+                    <div class="card-title">${track.title}</div>
+                    <div class="card-artist clickable-artist">${track.uploader}</div>
+                    <div class="card-duration">Played: ${track.playedAt || ''}</div>
+                </div>
+            `;
+
+            card.querySelector('.clickable-artist').addEventListener('click', (e) => {
+                e.stopPropagation();
+                openArtistProfile(track.uploader, track.thumbnail);
+            });
+
+            card.addEventListener('click', () => {
+                currentTrackList = [...playHistory];
+                currentTrackIdx = idx;
+                playTrack(track);
+            });
+            historyGrid.appendChild(card);
+        });
+    }
+
+    const btnClearHistory = document.getElementById('btnClearHistory');
+    if (btnClearHistory) {
+        btnClearHistory.addEventListener('click', () => {
+            if (confirm("Clear your entire listening history?")) {
+                playHistory = [];
+                localStorage.setItem('spotify_play_history', JSON.stringify(playHistory));
+                updateHistoryCountUI();
+                renderHistoryGrid();
+                showToast("Listening history cleared");
+            }
+        });
+    }
 
     const userPlaylistsEl = document.getElementById('userPlaylists');
 
@@ -220,7 +397,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnClosePlaylistModal = document.getElementById('btnClosePlaylistModal');
     const btnBarAddToPlaylist = document.getElementById('btnBarAddToPlaylist');
 
-    btnBarAddToPlaylist.addEventListener('click', () => {
+    btnBarAddToPlaylist.addEventListener('click', (e) => {
+        e.stopPropagation();
         if (!currentPlayingTrack) {
             showToast("No active track playing to add.");
             return;
@@ -242,6 +420,7 @@ document.addEventListener('DOMContentLoaded', () => {
         userPlaylists.forEach(pl => {
             const div = document.createElement('div');
             div.className = 'pl-select-item';
+            div.style.cssText = 'padding: 0.5rem; background: rgba(255,255,255,0.05); border-radius: 4px; margin-bottom: 4px; cursor: pointer; color: var(--text-white); font-size: 0.85rem;';
             div.textContent = `📁 ${pl.name} (${pl.tracks.length} tracks)`;
 
             div.addEventListener('click', () => {
@@ -339,6 +518,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const sectionEqualizer = document.getElementById('sectionEqualizer');
     const sectionVisualizer = document.getElementById('sectionVisualizer');
     const sectionSynthEngine = document.getElementById('sectionSynthEngine');
+    const sectionHistory = document.getElementById('sectionHistory');
 
     // Artist Hero UI
     const artistAvatarImg = document.getElementById('artistAvatarImg');
@@ -346,6 +526,54 @@ document.addEventListener('DOMContentLoaded', () => {
     const artistListeners = document.getElementById('artistListeners');
     const artistBio = document.getElementById('artistBio');
     const artistTopGrid = document.getElementById('artistTopGrid');
+
+    // Mobile Full Player Modal UI
+    const mobileFullPlayerModal = document.getElementById('mobileFullPlayerModal');
+    const btnCloseMobilePlayer = document.getElementById('btnCloseMobilePlayer');
+    const mPlayerCover = document.getElementById('mPlayerCover');
+    const mPlayerTitle = document.getElementById('mPlayerTitle');
+    const mPlayerArtist = document.getElementById('mPlayerArtist');
+    const mPlayerPlayPause = document.getElementById('mPlayerPlayPause');
+    const mBarPlayIcon = document.getElementById('mBarPlayIcon');
+    const mBarPauseIcon = document.getElementById('mBarPauseIcon');
+    const mPlayerPrev = document.getElementById('mPlayerPrev');
+    const mPlayerNext = document.getElementById('mPlayerNext');
+    const mPlayerShuffle = document.getElementById('mPlayerShuffle');
+    const mPlayerLoop = document.getElementById('mPlayerLoop');
+    const mPlayerScrubberFill = document.getElementById('mPlayerScrubberFill');
+    const mPlayerScrubberBg = document.getElementById('mPlayerScrubberBg');
+    const mPlayerCurrentTime = document.getElementById('mPlayerCurrentTime');
+    const mPlayerDurationTime = document.getElementById('mPlayerDurationTime');
+    const mPlayerBtnLike = document.getElementById('mPlayerBtnLike');
+    const mBtnOpenLyrics = document.getElementById('mBtnOpenLyrics');
+    const mBtnOpenEQ = document.getElementById('mBtnOpenEQ');
+
+    // Open Mobile Expanded Player Modal on mobile player bar tap
+    document.querySelector('.now-playing-left').addEventListener('click', (e) => {
+        if (window.innerWidth <= 768) {
+            mobileFullPlayerModal.classList.remove('hidden');
+        }
+    });
+
+    if (btnCloseMobilePlayer) {
+        btnCloseMobilePlayer.addEventListener('click', () => {
+            mobileFullPlayerModal.classList.add('hidden');
+        });
+    }
+
+    if (mBtnOpenLyrics) {
+        mBtnOpenLyrics.addEventListener('click', () => {
+            mobileFullPlayerModal.classList.add('hidden');
+            showSection('lyrics');
+        });
+    }
+
+    if (mBtnOpenEQ) {
+        mBtnOpenEQ.addEventListener('click', () => {
+            mobileFullPlayerModal.classList.add('hidden');
+            showSection('equalizer');
+        });
+    }
 
     function openArtistProfile(artistName, avatarUrl) {
         showSection('artist');
@@ -375,7 +603,7 @@ document.addEventListener('DOMContentLoaded', () => {
             card.className = 'song-card';
             card.innerHTML = `
                 <div class="card-thumb-container">
-                    <img src="${track.thumbnail}" alt="${track.title}" class="card-thumb">
+                    <img src="${track.thumbnail}" alt="${track.title}" class="card-thumb" onerror="this.src='synthwave_album_cover.jpg'">
                     <button class="play-hover-btn" title="Play">
                         <svg viewBox="0 0 24 24" width="24" height="24" fill="#000"><path d="M8 5v14l11-7z"/></svg>
                     </button>
@@ -391,7 +619,8 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    nowPlayingArtist.addEventListener('click', () => {
+    nowPlayingArtist.addEventListener('click', (e) => {
+        e.stopPropagation();
         openArtistProfile(currentPlayingTrack.uploader, currentPlayingTrack.thumbnail);
     });
 
@@ -448,7 +677,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Search YouTube (Failproof)
+    // Search YouTube (Bulletproof with Multi-Tier Fallback)
     async function searchYouTube(query) {
         if (!query.trim()) return;
         searchStatusText.textContent = `Searching for "${query}"...`;
@@ -462,13 +691,38 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentTrackList = data.results.map(r => ({ ...r, isYouTube: true }));
                 renderSongsGrid(currentTrackList);
                 searchStatusText.textContent = `Found ${data.results.length} ad-free tracks. Tap any song to play!`;
-            } else {
-                searchStatusText.textContent = `No results found for "${query}". Try another song name!`;
+                return;
             }
         } catch (err) {
-            console.error("Search error:", err);
-            searchStatusText.textContent = "Search connection error. Retrying...";
+            console.error("Primary search error, trying client fallback:", err);
         }
+
+        // Client-side Invidious search fallback if server search fails
+        try {
+            const fallbackUrl = `https://inv.tux.pizza/api/v1/search?q=${encodeURIComponent(query)}`;
+            const fbResp = await fetch(fallbackUrl);
+            const fbData = await fbResp.json();
+            if (Array.isArray(fbData) && fbData.length > 0) {
+                const results = fbData.filter(item => item.type === 'video').map(v => ({
+                    id: v.videoId,
+                    title: v.title,
+                    uploader: v.author,
+                    thumbnail: `https://i.ytimg.com/vi/${v.videoId}/hqdefault.jpg`,
+                    durationStr: formatSecs(v.lengthSeconds),
+                    isYouTube: true
+                }));
+                if (results.length > 0) {
+                    currentTrackList = results;
+                    renderSongsGrid(currentTrackList);
+                    searchStatusText.textContent = `Found ${results.length} ad-free tracks via client proxy.`;
+                    return;
+                }
+            }
+        } catch (fbErr) {
+            console.error("Client search fallback error:", fbErr);
+        }
+
+        searchStatusText.textContent = `No results found for "${query}". Try another song name!`;
     }
 
     btnDoSearch.addEventListener('click', () => searchYouTube(ytSearchInput.value));
@@ -477,24 +731,35 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // -------------------------------------------------------------
-    // 6. Failproof Direct Audio Stream Engine
+    // 6. Failproof Direct Audio Stream & Playback Engine
     // -------------------------------------------------------------
     function playTrack(track) {
         initAudioEngine();
         currentPlayingTrack = track;
+        addToPlayHistory(track);
 
         nowPlayingCover.src = track.thumbnail;
         nowPlayingTitle.textContent = track.title;
         nowPlayingArtist.textContent = `${track.uploader} • Ad-Free Stream 🛡️`;
 
+        if (mPlayerCover) mPlayerCover.src = track.thumbnail;
+        if (mPlayerTitle) mPlayerTitle.textContent = track.title;
+        if (mPlayerArtist) mPlayerArtist.textContent = track.uploader;
+
         const isLiked = likedSongs.some(s => s.id === track.id);
         btnLikeTrack.classList.toggle('liked', isLiked);
+        if (mPlayerBtnLike) mPlayerBtnLike.classList.toggle('liked', isLiked);
 
         updateLyricsDisplay(track);
 
         if (track.isYouTube) {
             searchStatusText.textContent = `Now Playing: "${track.title}"`;
             playViaClientYTPlayer(track.id);
+        } else {
+            // Built-in Synthesizer Track
+            isClientPlayerActive = false;
+            if (ytClientPlayer && ytClientPlayer.stopVideo) ytClientPlayer.stopVideo();
+            playBuiltinSynthTrack();
         }
     }
 
@@ -502,6 +767,7 @@ document.addEventListener('DOMContentLoaded', () => {
         isClientPlayerActive = true;
         youtubeAudioPlayer.pause();
 
+        initYTPlayer();
         if (ytClientPlayer && ytClientPlayer.loadVideoById) {
             ytClientPlayer.loadVideoById(videoId);
             setPlayState(true);
@@ -515,13 +781,17 @@ document.addEventListener('DOMContentLoaded', () => {
         if (playing) {
             barPlayIcon.classList.add('hidden');
             barPauseIcon.classList.remove('hidden');
+            if (mBarPlayIcon) mBarPlayIcon.classList.add('hidden');
+            if (mBarPauseIcon) mBarPauseIcon.classList.remove('hidden');
         } else {
             barPlayIcon.classList.remove('hidden');
             barPauseIcon.classList.add('hidden');
+            if (mBarPlayIcon) mBarPlayIcon.classList.remove('hidden');
+            if (mBarPauseIcon) mBarPauseIcon.classList.add('hidden');
         }
     }
 
-    btnBarPlayPause.addEventListener('click', () => {
+    function togglePlayPause() {
         if (isClientPlayerActive && ytClientPlayer) {
             if (isPlaying) {
                 ytClientPlayer.pauseVideo();
@@ -529,6 +799,16 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 ytClientPlayer.playVideo();
                 setPlayState(true);
+            }
+            return;
+        }
+
+        if (!currentPlayingTrack.isYouTube) {
+            if (isPlaying) {
+                setPlayState(false);
+                if (synthLoopTimer) clearInterval(synthLoopTimer);
+            } else {
+                playBuiltinSynthTrack();
             }
             return;
         }
@@ -545,10 +825,15 @@ document.addEventListener('DOMContentLoaded', () => {
             youtubeAudioPlayer.pause();
             setPlayState(false);
         }
-    });
+    }
 
-    btnBarNext.addEventListener('click', playNextTrack);
-    btnBarPrev.addEventListener('click', playPrevTrack);
+    btnBarPlayPause.addEventListener('click', (e) => { e.stopPropagation(); togglePlayPause(); });
+    if (mPlayerPlayPause) mPlayerPlayPause.addEventListener('click', (e) => { e.stopPropagation(); togglePlayPause(); });
+
+    btnBarNext.addEventListener('click', (e) => { e.stopPropagation(); playNextTrack(); });
+    btnBarPrev.addEventListener('click', (e) => { e.stopPropagation(); playPrevTrack(); });
+    if (mPlayerNext) mPlayerNext.addEventListener('click', (e) => { e.stopPropagation(); playNextTrack(); });
+    if (mPlayerPrev) mPlayerPrev.addEventListener('click', (e) => { e.stopPropagation(); playPrevTrack(); });
 
     function playNextTrack() {
         if (currentTrackList.length === 0) return;
@@ -566,43 +851,59 @@ document.addEventListener('DOMContentLoaded', () => {
         playTrack(currentTrackList[currentTrackIdx]);
     }
 
-    btnShuffle.addEventListener('click', () => {
+    function toggleShuffle() {
         isShuffle = !isShuffle;
         btnShuffle.classList.toggle('active', isShuffle);
+        if (mPlayerShuffle) mPlayerShuffle.classList.toggle('active', isShuffle);
         showToast(isShuffle ? "Shuffle Mode Enabled 🔀" : "Shuffle Mode Off");
-    });
+    }
 
-    btnBarLoop.addEventListener('click', () => {
+    function toggleLoop() {
         isLoop = !isLoop;
         btnBarLoop.classList.toggle('active', isLoop);
+        if (mPlayerLoop) mPlayerLoop.classList.toggle('active', isLoop);
         showToast(isLoop ? "Repeat Track Enabled 🔁" : "Repeat Off");
-    });
+    }
 
-    btnLikeTrack.addEventListener('click', () => {
+    btnShuffle.addEventListener('click', (e) => { e.stopPropagation(); toggleShuffle(); });
+    if (mPlayerShuffle) mPlayerShuffle.addEventListener('click', (e) => { e.stopPropagation(); toggleShuffle(); });
+
+    btnBarLoop.addEventListener('click', (e) => { e.stopPropagation(); toggleLoop(); });
+    if (mPlayerLoop) mPlayerLoop.addEventListener('click', (e) => { e.stopPropagation(); toggleLoop(); });
+
+    function toggleLikeCurrentTrack() {
         if (!currentPlayingTrack) return;
         const existingIdx = likedSongs.findIndex(s => s.id === currentPlayingTrack.id);
         if (existingIdx >= 0) {
             likedSongs.splice(existingIdx, 1);
             btnLikeTrack.classList.remove('liked');
+            if (mPlayerBtnLike) mPlayerBtnLike.classList.remove('liked');
             showToast("Removed from Liked Songs");
         } else {
             likedSongs.push(currentPlayingTrack);
             btnLikeTrack.classList.add('liked');
+            if (mPlayerBtnLike) mPlayerBtnLike.classList.add('liked');
             showToast("Added to Liked Songs ❤️");
         }
         localStorage.setItem('spotify_liked_songs', JSON.stringify(likedSongs));
         updateLikedCountUI();
-    });
+    }
 
-    // Scrubber
-    scrubberBg.addEventListener('click', (e) => {
-        const rect = scrubberBg.getBoundingClientRect();
+    btnLikeTrack.addEventListener('click', (e) => { e.stopPropagation(); toggleLikeCurrentTrack(); });
+    if (mPlayerBtnLike) mPlayerBtnLike.addEventListener('click', (e) => { e.stopPropagation(); toggleLikeCurrentTrack(); });
+
+    // Scrubber click handlers
+    function handleScrubberSeek(e, container) {
+        const rect = container.getBoundingClientRect();
         const pct = (e.clientX - rect.left) / rect.width;
         if (isClientPlayerActive && ytClientPlayer && ytClientPlayer.getDuration) {
             const dur = ytClientPlayer.getDuration();
             ytClientPlayer.seekTo(pct * dur, true);
         }
-    });
+    }
+
+    scrubberBg.addEventListener('click', (e) => { e.stopPropagation(); handleScrubberSeek(e, scrubberBg); });
+    if (mPlayerScrubberBg) mPlayerScrubberBg.addEventListener('click', (e) => { e.stopPropagation(); handleScrubberSeek(e, mPlayerScrubberBg); });
 
     spotifyVolumeSlider.addEventListener('input', (e) => {
         const val = parseInt(e.target.value);
@@ -620,7 +921,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return `${m}:${s < 10 ? '0' : ''}${s}`;
     }
 
-    // Lyrics
+    // Synchronized Lyrics
     const lyricsTitle = document.getElementById('lyricsTitle');
     const lyricsArtist = document.getElementById('lyricsArtist');
     const lyricsCover = document.getElementById('lyricsCover');
@@ -664,7 +965,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Equalizer
+    // -------------------------------------------------------------
+    // 7. Spotify Equalizer
+    // -------------------------------------------------------------
     const eq60 = document.getElementById('eq60');
     const eq230 = document.getElementById('eq230');
     const eq910 = document.getElementById('eq910');
@@ -712,7 +1015,9 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast(`Equalizer Preset: ${preset.toUpperCase()}`);
     });
 
-    // Spectrum Visualizer
+    // -------------------------------------------------------------
+    // 8. Real-Time Audio Spectrum & Waveform Visualizer
+    // -------------------------------------------------------------
     const spotifyCanvas = document.getElementById('spotifyCanvas');
     const ctx = spotifyCanvas.getContext('2d');
     let visMode = 'bars';
@@ -727,6 +1032,15 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.classList.add('active');
         showToast(`Visualizer Mode: ${mode.toUpperCase()}`);
     }
+
+    function resizeCanvas() {
+        if (spotifyCanvas.parentElement) {
+            spotifyCanvas.width = spotifyCanvas.parentElement.clientWidth - 24;
+            spotifyCanvas.height = 320;
+        }
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
 
     function drawSpotifyVisualizer() {
         requestAnimationFrame(drawSpotifyVisualizer);
@@ -764,10 +1078,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
             for (let i = 0; i < bufferLength; i += 2) {
                 const val = dataArray[i];
-                const radius = (val / 255) * 120 + 20;
+                const radius = (val / 255) * 110 + 20;
                 const angle = (i / bufferLength) * Math.PI * 2;
 
-                const x = centerX + Math.cos(angle) * radius * 2.4;
+                const x = centerX + Math.cos(angle) * radius * 2.2;
                 const y = centerY + Math.sin(angle) * radius * 1.0;
 
                 ctx.beginPath();
@@ -798,15 +1112,225 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Sidebar & View Wiring
+    // -------------------------------------------------------------
+    // 9. Virtual Piano Synthesizer & Step Sequencer Implementation
+    // -------------------------------------------------------------
+    const pianoWrapper = document.getElementById('pianoWrapper');
+    const spotifySeqGrid = document.getElementById('spotifySeqGrid');
+    const btnSeqToggle = document.getElementById('btnSeqToggle');
+    const btnSeqClear = document.getElementById('btnSeqClear');
+
+    const pianoNotes = [
+        { note: 'C4', freq: 261.63, key: 'A', type: 'white' },
+        { note: 'C#4', freq: 277.18, key: 'W', type: 'black' },
+        { note: 'D4', freq: 293.66, key: 'S', type: 'white' },
+        { note: 'D#4', freq: 311.13, key: 'E', type: 'black' },
+        { note: 'E4', freq: 329.63, key: 'D', type: 'white' },
+        { note: 'F4', freq: 349.23, key: 'F', type: 'white' },
+        { note: 'F#4', freq: 369.99, key: 'T', type: 'black' },
+        { note: 'G4', freq: 392.00, key: 'G', type: 'white' },
+        { note: 'G#4', freq: 415.30, key: 'Y', type: 'black' },
+        { note: 'A4', freq: 440.00, key: 'H', type: 'white' },
+        { note: 'A#4', freq: 466.16, key: 'U', type: 'black' },
+        { note: 'B4', freq: 493.88, key: 'J', type: 'white' },
+        { note: 'C5', freq: 523.25, key: 'K', type: 'white' },
+        { note: 'C#5', freq: 554.37, key: 'O', type: 'black' }
+    ];
+
+    if (pianoWrapper) {
+        pianoNotes.forEach(p => {
+            const keyDiv = document.createElement('div');
+            keyDiv.className = `piano-key ${p.type}-key`;
+            keyDiv.dataset.key = p.key;
+            keyDiv.dataset.note = p.note;
+            keyDiv.innerHTML = `
+                <span class="key-note">${p.note}</span>
+                <span class="key-label">[${p.key}]</span>
+            `;
+
+            const triggerKey = () => {
+                playSynthNote(p.freq, 0.4, 'sawtooth');
+                keyDiv.classList.add('active');
+                setTimeout(() => keyDiv.classList.remove('active'), 150);
+            };
+
+            keyDiv.addEventListener('mousedown', triggerKey);
+            keyDiv.addEventListener('touchstart', (e) => { e.preventDefault(); triggerKey(); });
+            pianoWrapper.appendChild(keyDiv);
+        });
+
+        window.addEventListener('keydown', (e) => {
+            if (e.target.tagName === 'INPUT') return;
+            const k = e.key.toUpperCase();
+            const noteObj = pianoNotes.find(p => p.key === k);
+            if (noteObj) {
+                playSynthNote(noteObj.freq, 0.4, 'sawtooth');
+                const keyEl = pianoWrapper.querySelector(`[data-key="${k}"]`);
+                if (keyEl) {
+                    keyEl.classList.add('active');
+                    setTimeout(() => keyEl.classList.remove('active'), 150);
+                }
+            }
+        });
+    }
+
+    // Step Sequencer Logic
+    const seqTracks = [
+        { name: 'Kick 🥁', type: 'kick' },
+        { name: 'Snare 🥁', type: 'snare' },
+        { name: 'Hi-Hat 🎩', type: 'hihat' },
+        { name: 'Synth Lead 🎹', type: 'lead' }
+    ];
+    const totalSteps = 16;
+    const seqGridData = Array(4).fill(null).map(() => Array(totalSteps).fill(false));
+    let isSeqPlaying = false;
+    let seqInterval = null;
+    let currentSeqStep = 0;
+
+    // Preset default groove in step sequencer
+    seqGridData[0][0] = true; seqGridData[0][4] = true; seqGridData[0][8] = true; seqGridData[0][12] = true; // Kick
+    seqGridData[1][4] = true; seqGridData[1][12] = true; // Snare
+    for (let s = 0; s < 16; s += 2) seqGridData[2][s] = true; // Hi-hat
+    seqGridData[3][0] = true; seqGridData[3][3] = true; seqGridData[3][6] = true; seqGridData[3][10] = true; // Lead
+
+    function renderSequencer() {
+        if (!spotifySeqGrid) return;
+        spotifySeqGrid.innerHTML = '';
+        seqTracks.forEach((track, rIdx) => {
+            const row = document.createElement('div');
+            row.className = 'seq-row';
+
+            const label = document.createElement('div');
+            label.className = 'seq-track-label';
+            label.textContent = track.name;
+            row.appendChild(label);
+
+            for (let cIdx = 0; cIdx < totalSteps; cIdx++) {
+                const pad = document.createElement('div');
+                pad.className = `seq-step-pad ${seqGridData[rIdx][cIdx] ? 'active' : ''}`;
+                pad.dataset.row = rIdx;
+                pad.dataset.col = cIdx;
+
+                pad.addEventListener('click', () => {
+                    seqGridData[rIdx][cIdx] = !seqGridData[rIdx][cIdx];
+                    pad.classList.toggle('active', seqGridData[rIdx][cIdx]);
+                    if (seqGridData[rIdx][cIdx]) playSeqSound(rIdx);
+                });
+
+                row.appendChild(pad);
+            }
+            spotifySeqGrid.appendChild(row);
+        });
+    }
+
+    function playSeqSound(rIdx) {
+        initAudioEngine();
+        if (!audioCtx) return;
+        const now = audioCtx.currentTime;
+
+        if (rIdx === 0) {
+            // Kick synth sound
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.frequency.setValueAtTime(150, now);
+            osc.frequency.exponentialRampToValueAtTime(0.01, now + 0.15);
+            gain.gain.setValueAtTime(1, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+            osc.connect(gain);
+            gain.connect(masterGain || audioCtx.destination);
+            osc.start(now);
+            osc.stop(now + 0.15);
+
+        } else if (rIdx === 1) {
+            // Snare synth sound
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(180, now);
+            osc.frequency.exponentialRampToValueAtTime(40, now + 0.1);
+            gain.gain.setValueAtTime(0.7, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+            osc.connect(gain);
+            gain.connect(masterGain || audioCtx.destination);
+            osc.start(now);
+            osc.stop(now + 0.1);
+
+        } else if (rIdx === 2) {
+            // Hi-Hat synth sound
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(8000, now);
+            gain.gain.setValueAtTime(0.3, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.05);
+            osc.connect(gain);
+            gain.connect(masterGain || audioCtx.destination);
+            osc.start(now);
+            osc.stop(now + 0.05);
+
+        } else if (rIdx === 3) {
+            // Lead melodic synth sound
+            const leadPitches = [329.63, 392.00, 440.00, 523.25];
+            const pitch = leadPitches[currentSeqStep % leadPitches.length];
+            playSynthNote(pitch, 0.2, 'sawtooth');
+        }
+    }
+
+    function stepSequencerTick() {
+        document.querySelectorAll('.seq-step-pad').forEach(p => p.classList.remove('current'));
+        seqTracks.forEach((t, rIdx) => {
+            const pad = spotifySeqGrid.querySelector(`[data-row="${rIdx}"][data-col="${currentSeqStep}"]`);
+            if (pad) pad.classList.add('current');
+            if (seqGridData[rIdx][currentSeqStep]) {
+                playSeqSound(rIdx);
+            }
+        });
+        currentSeqStep = (currentSeqStep + 1) % totalSteps;
+    }
+
+    if (btnSeqToggle) {
+        btnSeqToggle.addEventListener('click', () => {
+            isSeqPlaying = !isSeqPlaying;
+            if (isSeqPlaying) {
+                btnSeqToggle.textContent = 'Stop Loop ⏹️';
+                btnSeqToggle.style.background = '#ef4444';
+                seqInterval = setInterval(stepSequencerTick, 125); // 120 BPM
+                showToast("Sequencer Playing 🎵");
+            } else {
+                btnSeqToggle.textContent = 'Play Loop ▶';
+                btnSeqToggle.style.background = 'var(--sp-green)';
+                clearInterval(seqInterval);
+                document.querySelectorAll('.seq-step-pad').forEach(p => p.classList.remove('current'));
+            }
+        });
+    }
+
+    if (btnSeqClear) {
+        btnSeqClear.addEventListener('click', () => {
+            for (let r = 0; r < 4; r++) {
+                for (let c = 0; c < totalSteps; c++) {
+                    seqGridData[r][c] = false;
+                }
+            }
+            renderSequencer();
+            showToast("Sequencer Cleared");
+        });
+    }
+
+    renderSequencer();
+
+    // -------------------------------------------------------------
+    // 10. Navigation & Section Switching
+    // -------------------------------------------------------------
     document.getElementById('navHome').addEventListener('click', (e) => { e.preventDefault(); setActiveNav('navHome'); showSection('search'); renderSongsGrid(defaultFeaturedTracks); });
     document.getElementById('navSearch').addEventListener('click', (e) => { e.preventDefault(); setActiveNav('navSearch'); showSection('search'); ytSearchInput.focus(); });
+    document.getElementById('navHistory').addEventListener('click', (e) => { e.preventDefault(); setActiveNav('navHistory'); showSection('history'); renderHistoryGrid(); });
     document.getElementById('navLibrary').addEventListener('click', (e) => { e.preventDefault(); setActiveNav('navLibrary'); showSection('search'); searchHeading.textContent = "Your Liked Songs Library"; currentTrackList = [...likedSongs]; renderSongsGrid(currentTrackList); });
     document.getElementById('navLyrics').addEventListener('click', (e) => { e.preventDefault(); setActiveNav('navLyrics'); showSection('lyrics'); });
     document.getElementById('navEqualizer').addEventListener('click', (e) => { e.preventDefault(); setActiveNav('navEqualizer'); showSection('equalizer'); });
     document.getElementById('navSynth').addEventListener('click', (e) => { e.preventDefault(); setActiveNav('navSynth'); showSection('synth'); });
 
-    // Mobile Navigation Bar Events
+    // Mobile Navigation Events
     const mNavHome = document.getElementById('mNavHome');
     const mNavSearch = document.getElementById('mNavSearch');
     const mNavLibrary = document.getElementById('mNavLibrary');
@@ -823,7 +1347,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     document.getElementById('plLiked').addEventListener('click', () => { setActivePlaylistItem(document.getElementById('plLiked')); showSection('search'); searchHeading.textContent = "Your Liked Songs Library"; currentTrackList = [...likedSongs]; renderSongsGrid(currentTrackList); });
+    document.getElementById('plHistory').addEventListener('click', () => { setActivePlaylistItem(document.getElementById('plHistory')); showSection('history'); renderHistoryGrid(); });
     document.getElementById('plTrending').addEventListener('click', () => { setActivePlaylistItem(document.getElementById('plTrending')); showSection('search'); searchYouTube('trending music songs 2026'); });
+    document.getElementById('plSynth').addEventListener('click', () => { setActivePlaylistItem(document.getElementById('plSynth')); showSection('synth'); });
 
     function setActiveNav(id) {
         document.querySelectorAll('.nav-item').forEach(a => a.classList.remove('active'));
@@ -853,17 +1379,20 @@ document.addEventListener('DOMContentLoaded', () => {
         sectionEqualizer.classList.add('hidden');
         sectionVisualizer.classList.add('hidden');
         sectionSynthEngine.classList.add('hidden');
+        sectionHistory.classList.add('hidden');
 
         if (section === 'artist') sectionArtistProfile.classList.remove('hidden');
         else if (section === 'lyrics') sectionLyrics.classList.remove('hidden');
         else if (section === 'equalizer') sectionEqualizer.classList.remove('hidden');
         else if (section === 'visualizer') sectionVisualizer.classList.remove('hidden');
         else if (section === 'synth') sectionSynthEngine.classList.remove('hidden');
+        else if (section === 'history') sectionHistory.classList.remove('hidden');
         else sectionSearchResults.classList.remove('hidden');
     }
 
     // Filter Chips
     document.getElementById('chipAll').addEventListener('click', () => { showSection('search'); currentTrackList = [...defaultFeaturedTracks]; renderSongsGrid(currentTrackList); });
+    document.getElementById('chipHistory').addEventListener('click', () => { showSection('history'); renderHistoryGrid(); });
     document.getElementById('chipYouTube').addEventListener('click', () => { showSection('search'); searchYouTube('trending music songs 2026'); });
     document.getElementById('chipArtist').addEventListener('click', () => openArtistProfile(currentPlayingTrack.uploader, currentPlayingTrack.thumbnail));
     document.getElementById('chipLiked').addEventListener('click', () => { showSection('search'); searchHeading.textContent = "Your Liked Songs Library"; currentTrackList = [...likedSongs]; renderSongsGrid(currentTrackList); });

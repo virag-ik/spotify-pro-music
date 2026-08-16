@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Spotify PRO - Dynamic Ad-Free Music Player</title>
-    <meta name="description" content="Spotify Pro ad-free YouTube player with mobile & laptop responsive design, lyrics, 5-band equalizer, and spectrum visualizer.">
+    <meta name="description" content="Spotify Pro ad-free YouTube player with mobile & laptop responsive design, lyrics, 5-band equalizer, synth, and spectrum visualizer.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;600;700&display=swap" rel="stylesheet">
@@ -35,6 +35,10 @@
                     <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
                     <span>Search YouTube</span>
                 </a>
+                <a href="#" class="nav-item" id="navHistory">
+                    <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6a7 7 0 1 1 7 7 7.07 7.07 0 0 1-6-3.15l-1.42 1.42A8.94 8.94 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5l4.25 2.52.77-1.28-3.52-2.09V8z"/></svg>
+                    <span>Listening History</span>
+                </a>
                 <a href="#" class="nav-item" id="navArtistProfile">
                     <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
                     <span>Singer / Artist Profile</span>
@@ -64,6 +68,7 @@
                 </div>
                 <ul class="user-playlists" id="userPlaylists">
                     <li class="pl-item active" id="plSynth" data-target="synth-collection">⚡ Built-in Synth Tracks</li>
+                    <li class="pl-item" id="plHistory">📜 Recently Played (<span id="historyCount">0</span>)</li>
                     <li class="pl-item" id="plLiked" data-target="yt-favorites">❤️ Liked Songs (<span id="likedCount">0</span>)</li>
                     <li class="pl-item" id="plTrending" data-target="trending-yt">🔥 Trending YouTube Hits</li>
                 </ul>
@@ -113,6 +118,7 @@
                 <!-- Filter Chips -->
                 <div class="filter-chips">
                     <button class="chip active" id="chipAll">All</button>
+                    <button class="chip" id="chipHistory">Recently Played</button>
                     <button class="chip" id="chipYouTube">YouTube Hits</button>
                     <button class="chip" id="chipArtist">Artist Profile</button>
                     <button class="chip" id="chipLiked">Liked Library</button>
@@ -236,7 +242,7 @@
 
                     <div class="synth-layout">
                         <div class="card piano-box">
-                            <h3>VIRTUAL PIANO SYNTHESIZER <span class="sub">(Play with keys A-K)</span></h3>
+                            <h3>VIRTUAL PIANO SYNTHESIZER <span class="sub">(Play with keys A-K or tap keys below)</span></h3>
                             <div class="piano-wrapper" id="pianoWrapper"></div>
                         </div>
 
@@ -252,6 +258,18 @@
                         </div>
                     </div>
                 </section>
+
+                <!-- View 7: Recently Played History Section -->
+                <section class="section-container hidden" id="sectionHistory">
+                    <div class="section-header">
+                        <div>
+                            <h2>📜 Listening History</h2>
+                            <span class="search-status">Saved automatically to your browser</span>
+                        </div>
+                        <button class="btn-spotify btn-sm btn-outline" id="btnClearHistory">Clear History</button>
+                    </div>
+                    <div class="spotify-grid" id="historyGrid"></div>
+                </section>
             </div>
         </main>
     </div>
@@ -263,7 +281,7 @@
             <span>Home</span>
         </a>
         <a href="#" class="mobile-nav-item" id="mNavSearch">
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 14z"/></svg>
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
             <span>Search</span>
         </a>
         <a href="#" class="mobile-nav-item" id="mNavLibrary">
@@ -294,7 +312,7 @@
     </div>
 
     <!-- Spotify Player Bar (Desktop & Mobile Mini Player) -->
-    <footer class="spotify-player-bar">
+    <footer class="spotify-player-bar" id="spotifyPlayerBar">
         <div class="now-playing-left">
             <img id="nowPlayingCover" src="synthwave_album_cover.jpg" alt="Cover" class="now-playing-thumb">
             <div class="now-playing-info">
@@ -349,6 +367,63 @@
             </div>
         </div>
     </footer>
+
+    <!-- Mobile Full-Screen Expanded Player Modal -->
+    <div id="mobileFullPlayerModal" class="mobile-player-modal hidden">
+        <div class="m-player-header">
+            <button id="btnCloseMobilePlayer" class="m-player-close-btn">✕</button>
+            <span class="m-player-header-title">PLAYING FROM YOUTUBE</span>
+            <div style="width:24px;"></div>
+        </div>
+
+        <div class="m-player-art-container">
+            <img id="mPlayerCover" src="synthwave_album_cover.jpg" alt="Cover" class="m-player-cover">
+        </div>
+
+        <div class="m-player-info-row">
+            <div class="m-player-titles">
+                <h2 id="mPlayerTitle" class="m-player-title">Track Title</h2>
+                <p id="mPlayerArtist" class="m-player-artist">Artist Name</p>
+            </div>
+            <button class="icon-btn-like" id="mPlayerBtnLike" title="Add to Liked Songs">
+                <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+            </button>
+        </div>
+
+        <div class="m-player-scrubber-section">
+            <div class="scrubber-bg" id="mPlayerScrubberBg">
+                <div class="scrubber-fill" id="mPlayerScrubberFill" style="width: 0%;"></div>
+            </div>
+            <div class="m-player-times">
+                <span id="mPlayerCurrentTime">0:00</span>
+                <span id="mPlayerDurationTime">0:00</span>
+            </div>
+        </div>
+
+        <div class="m-player-controls">
+            <button class="ctrl-btn" id="mPlayerShuffle" title="Shuffle">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg>
+            </button>
+            <button class="ctrl-btn" id="mPlayerPrev" title="Previous">
+                <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+            </button>
+            <button class="ctrl-btn main-play-btn m-play-btn" id="mPlayerPlayPause" title="Play / Pause">
+                <svg id="mBarPlayIcon" viewBox="0 0 24 24" width="28" height="28" fill="#000"><path d="M8 5v14l11-7z"/></svg>
+                <svg id="mBarPauseIcon" class="hidden" viewBox="0 0 24 24" width="28" height="28" fill="#000"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+            </button>
+            <button class="ctrl-btn" id="mPlayerNext" title="Next">
+                <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+            </button>
+            <button class="ctrl-btn" id="mPlayerLoop" title="Repeat">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/></svg>
+            </button>
+        </div>
+
+        <div class="m-player-footer-tools">
+            <button class="btn-spotify btn-sm btn-outline" id="mBtnOpenLyrics">Lyrics 🎤</button>
+            <button class="btn-spotify btn-sm btn-outline" id="mBtnOpenEQ">Equalizer 🎚️</button>
+        </div>
+    </div>
 
     <!-- Hidden Audio Element -->
     <audio id="youtubeAudioPlayer"></audio>
