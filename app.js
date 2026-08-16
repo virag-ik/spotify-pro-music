@@ -105,7 +105,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // -------------------------------------------------------------
-    // 2. YouTube Client IFrame Player Initialization & Failproof Desktop/Mobile Execution
+    // 2. YouTube Client IFrame Player Initialization & Failproof Execution
     // -------------------------------------------------------------
     let ytClientPlayer = null;
     let isClientPlayerActive = false;
@@ -699,12 +699,42 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // -------------------------------------------------------------
+    // Media Session API Integration for Mobile Background & Lockscreen Controls
+    // -------------------------------------------------------------
+    function updateMediaSession(track) {
+        if ('mediaSession' in navigator && track) {
+            try {
+                navigator.mediaSession.metadata = new MediaMetadata({
+                    title: track.title,
+                    artist: track.uploader || 'Spotify PRO',
+                    album: 'Spotify PRO Music',
+                    artwork: [
+                        { src: track.thumbnail, sizes: '96x96', type: 'image/jpeg' },
+                        { src: track.thumbnail, sizes: '128x128', type: 'image/jpeg' },
+                        { src: track.thumbnail, sizes: '192x192', type: 'image/jpeg' },
+                        { src: track.thumbnail, sizes: '512x512', type: 'image/jpeg' }
+                    ]
+                });
+
+                // Lockscreen & Notification Media Action Listeners
+                navigator.mediaSession.setActionHandler('play', () => togglePlayPause());
+                navigator.mediaSession.setActionHandler('pause', () => togglePlayPause());
+                navigator.mediaSession.setActionHandler('previoustrack', () => playPrevTrack());
+                navigator.mediaSession.setActionHandler('nexttrack', () => playNextTrack());
+            } catch (e) {
+                console.log("MediaSession setup note:", e);
+            }
+        }
+    }
+
+    // -------------------------------------------------------------
     // 6. Failproof Direct Audio Stream & Playback Engine (Desktop & Mobile)
     // -------------------------------------------------------------
     function playTrack(track) {
         initAudioEngine();
         currentPlayingTrack = track;
         addToPlayHistory(track);
+        updateMediaSession(track);
 
         nowPlayingCover.src = track.thumbnail;
         nowPlayingTitle.textContent = track.title;
@@ -759,6 +789,12 @@ document.addEventListener('DOMContentLoaded', () => {
             barPauseIcon.classList.add('hidden');
             if (mBarPlayIcon) mBarPlayIcon.classList.remove('hidden');
             if (mBarPauseIcon) mBarPauseIcon.classList.add('hidden');
+        }
+
+        if ('mediaSession' in navigator) {
+            try {
+                navigator.mediaSession.playbackState = playing ? 'playing' : 'paused';
+            } catch (e) {}
         }
     }
 
