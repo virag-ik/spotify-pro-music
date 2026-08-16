@@ -202,28 +202,49 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Tab visibility listener for persistent mobile background play
-    document.addEventListener('visibilitychange', () => {
-        if (!isPlaying || !isClientPlayerActive || !ytClientPlayer) return;
+    // Audio element playback mode flag
+    let isAudioElementPlaying = false;
 
-        if (document.hidden) {
-            // Tab going to background — keep audio context alive
+    // Audio element event handlers for track end and error
+    youtubeAudioPlayer.addEventListener('ended', () => {
+        if (isAudioElementPlaying) {
+            if (isLoop && currentPlayingTrack) {
+                playTrack(currentPlayingTrack);
+            } else {
+                playNextTrack();
+            }
+        }
+    });
+
+    youtubeAudioPlayer.addEventListener('error', () => {
+        if (isAudioElementPlaying) {
+            console.warn("Audio element playback error, falling back to iframe player");
+            isAudioElementPlaying = false;
+            if (currentPlayingTrack && currentPlayingTrack.isYouTube) {
+                playViaIframePlayer(currentPlayingTrack.id);
+            }
+        }
+    });
+
+    // Tab visibility listener for background play persistence
+    document.addEventListener('visibilitychange', () => {
+        if (!isPlaying) return;
+
+        if (!document.hidden) {
+            // Tab returning to foreground — resume if browser paused us
             if (audioCtx && audioCtx.state === 'suspended') {
                 audioCtx.resume().catch(() => {});
             }
-            ensureBackgroundAudioKeepAlive();
-        } else {
-            // Tab returning to foreground — force resume if it was paused by the browser
-            if (audioCtx && audioCtx.state === 'suspended') {
-                audioCtx.resume().catch(() => {});
+            if (isAudioElementPlaying && youtubeAudioPlayer.paused) {
+                youtubeAudioPlayer.play().catch(() => {});
             }
-            if (typeof ytClientPlayer.playVideo === 'function') {
+            if (isClientPlayerActive && ytClientPlayer && typeof ytClientPlayer.playVideo === 'function') {
                 ytClientPlayer.playVideo();
             }
         }
     });
 
-    // Automatic Error Recovery on restricted/blocked video embedding
+    // Automatic Error Recovery on restricted/blocked video embedding (iframe fallback)
     async function onClientPlayerError(event) {
         console.warn("YouTube Player error code:", event.data);
         if (event.data === 101 || event.data === 150 || event.data === 100 || event.data === 2) {
@@ -248,28 +269,34 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Scrubber update timer
+    // Scrubber update timer — handles both audio element and iframe player
     setInterval(() => {
-        if (isClientPlayerActive && ytClientPlayer && ytClientPlayer.getCurrentTime) {
+        let cur = 0, dur = 0;
+
+        if (isAudioElementPlaying && youtubeAudioPlayer) {
+            cur = youtubeAudioPlayer.currentTime || 0;
+            dur = youtubeAudioPlayer.duration || 0;
+        } else if (isClientPlayerActive && ytClientPlayer && ytClientPlayer.getCurrentTime) {
             try {
-                const cur = ytClientPlayer.getCurrentTime() || 0;
-                const dur = ytClientPlayer.getDuration() || 0;
-                if (dur > 0) {
-                    const pct = `${(cur / dur) * 100}%`;
-                    scrubberFill.style.width = pct;
-                    if (mPlayerScrubberFill) mPlayerScrubberFill.style.width = pct;
-
-                    const curStr = formatSecs(cur);
-                    const durStr = formatSecs(dur);
-
-                    barCurrentTime.textContent = curStr;
-                    barDurationTime.textContent = durStr;
-                    if (mPlayerCurrentTime) mPlayerCurrentTime.textContent = curStr;
-                    if (mPlayerDurationTime) mPlayerDurationTime.textContent = durStr;
-
-                    highlightLyricsLine(cur, dur);
-                }
+                cur = ytClientPlayer.getCurrentTime() || 0;
+                dur = ytClientPlayer.getDuration() || 0;
             } catch (e) {}
+        }
+
+        if (dur > 0 && !isNaN(dur)) {
+            const pct = `${(cur / dur) * 100}%`;
+            scrubberFill.style.width = pct;
+            if (mPlayerScrubberFill) mPlayerScrubberFill.style.width = pct;
+
+            const curStr = formatSecs(cur);
+            const durStr = formatSecs(dur);
+
+            barCurrentTime.textContent = curStr;
+            barDurationTime.textContent = durStr;
+            if (mPlayerCurrentTime) mPlayerCurrentTime.textContent = curStr;
+            if (mPlayerDurationTime) mPlayerDurationTime.textContent = durStr;
+
+            highlightLyricsLine(cur, dur);
         }
     }, 400);
 
@@ -826,9 +853,43 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function playViaClientYTPlayer(videoId) {
+    async function playViaClientYTPlayer(videoId) {
+        // Stop any previous audio element playback
+        youtubeAudioPlayer.pause();
+        youtubeAudioPlayer.removeAttribute('src');
+        isAudioElementPlaying = false;
+        isClientPlayerActive = false;
+
+        // Method 1: Try direct audio stream via server (works on desktop + background play)
+        try {
+            searchStatusText.textContent = `Loading audio stream...`;
+            const resp = await fetch(`/api/audio-url?id=${videoId}`);
+            if (resp.ok) {
+                const data = await resp.json();
+                if (data.url) {
+                    youtubeAudioPlayer.src = data.url;
+                    youtubeAudioPlayer.loop = false;
+                    await youtubeAudioPlayer.play();
+                    isAudioElementPlaying = true;
+                    isClientPlayerActive = false;
+                    setPlayState(true);
+                    searchStatusText.textContent = `Now Playing: "${currentPlayingTrack ? currentPlayingTrack.title : ''}"`;
+                    console.log("Playing via direct audio stream");
+                    return;
+                }
+            }
+        } catch (e) {
+            console.log("Direct audio stream failed, trying iframe player:", e);
+        }
+
+        // Method 2: Fall back to YT IFrame Player
+        playViaIframePlayer(videoId);
+    }
+
+    function playViaIframePlayer(videoId) {
         isClientPlayerActive = true;
-        ensureBackgroundAudioKeepAlive();
+        isAudioElementPlaying = false;
+        youtubeAudioPlayer.pause();
 
         initYTPlayer();
         if (ytPlayerReady && ytClientPlayer && typeof ytClientPlayer.loadVideoById === 'function') {
@@ -836,10 +897,10 @@ document.addEventListener('DOMContentLoaded', () => {
             ytClientPlayer.playVideo();
             setPlayState(true);
         } else {
-            // Player not ready yet — queue the video and onPlayerReady will pick it up
             pendingVideoId = videoId;
             setPlayState(true);
         }
+        searchStatusText.textContent = `Now Playing: "${currentPlayingTrack ? currentPlayingTrack.title : ''}"`;
     }
 
     function setPlayState(playing) {
@@ -864,6 +925,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function togglePlayPause() {
+        // Handle audio element playback (direct stream mode)
+        if (isAudioElementPlaying && youtubeAudioPlayer) {
+            if (isPlaying) {
+                youtubeAudioPlayer.pause();
+                setPlayState(false);
+            } else {
+                youtubeAudioPlayer.play().catch(() => {});
+                setPlayState(true);
+            }
+            return;
+        }
+
+        // Handle YT iframe player
         if (isClientPlayerActive && ytClientPlayer) {
             if (isPlaying) {
                 if (typeof ytClientPlayer.pauseVideo === 'function') ytClientPlayer.pauseVideo();
@@ -968,8 +1042,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // Scrubber click handlers
     function handleScrubberSeek(e, container) {
         const rect = container.getBoundingClientRect();
-        const pct = (e.clientX - rect.left) / rect.width;
-        if (isClientPlayerActive && ytClientPlayer && ytClientPlayer.getDuration) {
+        const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        if (isAudioElementPlaying && youtubeAudioPlayer && youtubeAudioPlayer.duration) {
+            youtubeAudioPlayer.currentTime = pct * youtubeAudioPlayer.duration;
+        } else if (isClientPlayerActive && ytClientPlayer && ytClientPlayer.getDuration) {
             const dur = ytClientPlayer.getDuration();
             ytClientPlayer.seekTo(pct * dur, true);
         }

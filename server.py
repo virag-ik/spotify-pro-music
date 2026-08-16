@@ -95,6 +95,58 @@ def search_youtube_innertube(query):
         print(f"InnerTube search error: {e}")
     return results
 
+def get_audio_stream_url(video_id):
+    """Extract a direct audio stream URL for a YouTube video via Piped proxies or yt-dlp."""
+    piped_instances = [
+        f"https://pipedapi.kavin.rocks/streams/{video_id}",
+        f"https://api.piped.video/streams/{video_id}",
+        f"https://pipedapi.in.projectsegfau.lt/streams/{video_id}",
+    ]
+    for api_url in piped_instances:
+        try:
+            req = urllib.request.Request(api_url, headers={
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            })
+            with urllib.request.urlopen(req, timeout=6, context=ssl_ctx) as resp:
+                data = json.loads(resp.read().decode('utf-8', 'replace'))
+                streams = data.get('audioStreams') or []
+                best = None
+                for s in streams:
+                    url = s.get('url', '')
+                    mime = s.get('mimeType', '')
+                    if url and 'audio' in mime:
+                        if not best or (s.get('bitrate', 0) > best.get('bitrate', 0)):
+                            best = s
+                if best and best.get('url'):
+                    print(f"Audio URL resolved via Piped for {video_id}")
+                    return best['url']
+        except Exception as e:
+            print(f"Piped audio extraction failed ({api_url}): {e}")
+            continue
+
+    if yt_dlp:
+        try:
+            ydl_opts = {
+                'format': 'bestaudio/best',
+                'quiet': True,
+                'no_warnings': True,
+                'nocheckcertificate': True,
+                'skip_download': True,
+                'http_headers': {
+                    'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15',
+                }
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(f'https://www.youtube.com/watch?v={video_id}', download=False)
+                audio_url = info.get('url')
+                if audio_url:
+                    print(f"Audio URL resolved via yt-dlp for {video_id}")
+                    return audio_url
+        except Exception as e:
+            print(f"yt-dlp audio extraction failed: {e}")
+
+    return None
+
 def search_youtube_ytdlp(query):
     """Secondary search using yt_dlp flat extraction."""
     if not yt_dlp:
@@ -226,7 +278,7 @@ class SpotifyYouTubeHandler(http.server.SimpleHTTPRequestHandler):
             self.send_json_response({'results': results})
             return
 
-        # Stream Resolution Endpoint
+        # Stream Resolution Endpoint (legacy)
         elif path == '/api/stream':
             video_id = query.get('id', [''])[0]
             if not video_id:
@@ -237,6 +289,20 @@ class SpotifyYouTubeHandler(http.server.SimpleHTTPRequestHandler):
                 'id': video_id,
                 'useClientPlayer': True
             })
+            return
+
+        # Direct Audio URL Endpoint — returns a playable audio stream URL
+        elif path == '/api/audio-url':
+            video_id = query.get('id', [''])[0]
+            if not video_id:
+                self.send_json_response({'error': 'Missing video id'}, 400)
+                return
+
+            audio_url = get_audio_stream_url(video_id)
+            if audio_url:
+                self.send_json_response({'url': audio_url, 'id': video_id})
+            else:
+                self.send_json_response({'error': 'Could not resolve audio stream', 'id': video_id}, 404)
             return
 
         super().do_GET()
