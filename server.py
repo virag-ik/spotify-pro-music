@@ -96,59 +96,29 @@ def search_youtube_innertube(query):
     return results
 
 def get_audio_stream_url(video_id):
-    """Extract a direct audio stream URL for a YouTube video via Piped proxies or yt-dlp."""
-    piped_instances = [
-        f"https://pipedapi.kavin.rocks/streams/{video_id}",
-        f"https://api.piped.video/streams/{video_id}",
-        f"https://pipedapi.in.projectsegfau.lt/streams/{video_id}",
-    ]
-    for api_url in piped_instances:
-        try:
-            req = urllib.request.Request(api_url, headers={
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            })
-            with urllib.request.urlopen(req, timeout=6, context=ssl_ctx) as resp:
-                data = json.loads(resp.read().decode('utf-8', 'replace'))
-                streams = data.get('audioStreams') or []
-                best = None
-                for s in streams:
-                    url = s.get('url', '')
-                    mime = s.get('mimeType', '')
-                    if url and 'audio' in mime:
-                        if not best or (s.get('bitrate', 0) > best.get('bitrate', 0)):
-                            best = s
-                if best and best.get('url'):
-                    print(f"Audio URL resolved via Piped for {video_id}")
-                    return best['url']
-        except Exception as e:
-            print(f"Piped audio extraction failed ({api_url}): {e}")
-            continue
+    """Extract a direct audio stream URL for a YouTube video via Cobalt API."""
+    api_url = "https://api.cobalt.tools/api/json"
+    headers = {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    }
+    
+    payload = json.dumps({
+        "url": f"https://www.youtube.com/watch?v={video_id}",
+        "isAudioOnly": True
+    }).encode('utf-8')
 
-    if yt_dlp:
-        try:
-            ydl_opts = {
-                'format': 'bestaudio/best',
-                'quiet': True,
-                'no_warnings': True,
-                'nocheckcertificate': True,
-                'skip_download': True,
-                'extractor_args': {
-                    'youtube': {
-                        'client': ['android', 'ios']
-                    }
-                },
-                'http_headers': {
-                    'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15',
-                }
-            }
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(f'https://www.youtube.com/watch?v={video_id}', download=False)
-                audio_url = info.get('url')
-                if audio_url:
-                    print(f"Audio URL resolved via yt-dlp for {video_id}")
-                    return audio_url
-        except Exception as e:
-            print(f"yt-dlp audio extraction failed: {e}")
+    try:
+        req = urllib.request.Request(api_url, data=payload, headers=headers, method='POST')
+        with urllib.request.urlopen(req, timeout=10, context=ssl_ctx) as resp:
+            result = json.loads(resp.read().decode('utf-8'))
+            audio_url = result.get('url')
+            if audio_url:
+                print(f"Audio URL resolved via Cobalt API for {video_id}")
+                return audio_url
+    except Exception as e:
+        print(f"Cobalt API extraction failed: {e}")
 
     return None
 
