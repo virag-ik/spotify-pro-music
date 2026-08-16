@@ -125,15 +125,40 @@
                     <button class="chip" id="chipVisualizer">Live Spectrum</button>
                 </div>
 
-                <!-- View 1: Search / Main Songs Grid -->
+                <!-- View 1: Home Multi-Section Horizontal Scroll View -->
                 <section class="section-container" id="sectionSearchResults">
-                    <div class="section-header">
-                        <h2 id="searchHeading">Featured & Trending Songs</h2>
-                        <span class="search-status" id="searchStatusText">Ready for instant ad-free YouTube streaming</span>
+                    <!-- Section 1: Trending YouTube Songs -->
+                    <div class="home-sub-section">
+                        <div class="section-header">
+                            <h2 id="searchHeading">🔥 Trending YouTube Hits</h2>
+                            <span class="search-status" id="searchStatusText">Ready for instant ad-free YouTube streaming</span>
+                        </div>
+                        <div class="horizontal-scroll-row" id="trendingGrid"></div>
                     </div>
 
-                    <div class="spotify-grid" id="songsGrid">
-                        <!-- Cards populated dynamically by JS -->
+                    <!-- Section 2: Recently Played Songs -->
+                    <div class="home-sub-section" id="recentHomeSection">
+                        <div class="section-header">
+                            <h2>📜 Recently Played Songs</h2>
+                            <span class="search-status">Saved in your browser</span>
+                        </div>
+                        <div class="horizontal-scroll-row" id="recentHomeGrid"></div>
+                    </div>
+
+                    <!-- Section 3: Liked Songs -->
+                    <div class="home-sub-section" id="likedHomeSection">
+                        <div class="section-header">
+                            <h2>❤️ Your Liked Songs</h2>
+                        </div>
+                        <div class="horizontal-scroll-row" id="likedHomeGrid"></div>
+                    </div>
+
+                    <!-- Section 4: Featured & Synth Tracks -->
+                    <div class="home-sub-section">
+                        <div class="section-header">
+                            <h2>⚡ Featured Tracks & Synthwave</h2>
+                        </div>
+                        <div class="horizontal-scroll-row" id="featuredGrid"></div>
                     </div>
                 </section>
 
@@ -153,10 +178,10 @@
                         </div>
                     </div>
 
-                    <div class="section-header" style="margin-top: 1.5rem;">
+                    <div class="section-header" style="margin-top: 1rem;">
                         <h2>Top Popular Tracks</h2>
                     </div>
-                    <div class="spotify-grid" id="artistTopGrid"></div>
+                    <div class="horizontal-scroll-row" id="artistTopGrid"></div>
                 </section>
 
                 <!-- View 3: Real-Time Synchronized Lyrics View -->
@@ -268,7 +293,7 @@
                         </div>
                         <button class="btn-spotify btn-sm btn-outline" id="btnClearHistory">Clear History</button>
                     </div>
-                    <div class="spotify-grid" id="historyGrid"></div>
+                    <div class="horizontal-scroll-row" id="historyGrid"></div>
                 </section>
             </div>
         </main>
@@ -306,8 +331,8 @@
         </div>
     </div>
 
-    <!-- Hidden YouTube Client Fallback Player container -->
-    <div id="ytPlayerContainer" style="display:none; position:absolute; width:1px; height:1px; overflow:hidden;">
+    <!-- Active YouTube Client Fallback Player container (Never display:none so audio plays on Desktop & Mobile) -->
+    <div id="ytPlayerContainer" style="position: fixed; bottom: 0; right: 0; width: 1px; height: 1px; opacity: 0.001; pointer-events: none; z-index: -1; overflow: hidden;">
         <div id="clientYtFrame"></div>
     </div>
 

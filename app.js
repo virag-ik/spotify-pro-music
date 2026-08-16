@@ -105,7 +105,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // -------------------------------------------------------------
-    // 2. YouTube Client IFrame Player Initialization & Error Handling
+    // 2. YouTube Client IFrame Player Initialization & Failproof Desktop/Mobile Execution
     // -------------------------------------------------------------
     let ytClientPlayer = null;
     let isClientPlayerActive = false;
@@ -114,8 +114,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (ytClientPlayer || typeof YT === 'undefined' || !YT.Player) return;
         try {
             ytClientPlayer = new YT.Player('clientYtFrame', {
-                height: '1',
-                width: '1',
+                height: '100%',
+                width: '100%',
                 videoId: '',
                 playerVars: {
                     'autoplay': 1,
@@ -123,7 +123,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     'playsinline': 1,
                     'rel': 0,
                     'modestbranding': 1,
-                    'enablejsapi': 1
+                    'enablejsapi': 1,
+                    'origin': window.location.origin
                 },
                 events: {
                     'onStateChange': onClientPlayerStateChange,
@@ -281,31 +282,32 @@ document.addEventListener('DOMContentLoaded', () => {
         if (playHistory.length > 50) playHistory.pop();
         localStorage.setItem('spotify_play_history', JSON.stringify(playHistory));
         updateHistoryCountUI();
+        renderHomePageSections();
     }
 
-    function renderHistoryGrid() {
-        const historyGrid = document.getElementById('historyGrid');
-        if (!historyGrid) return;
-        historyGrid.innerHTML = '';
-        if (playHistory.length === 0) {
-            historyGrid.innerHTML = '<div style="color:var(--text-sub); grid-column: 1/-1; text-align:center; padding:3rem;">No listening history yet. Play any song to track it here!</div>';
+    // Universal Horizontal Track Row Renderer
+    function renderHorizontalTrackRow(containerEl, tracks) {
+        if (!containerEl) return;
+        containerEl.innerHTML = '';
+        if (!tracks || tracks.length === 0) {
+            containerEl.innerHTML = '<div style="color:var(--text-sub); padding:0.8rem 0; font-size:0.8rem;">No songs in this section yet.</div>';
             return;
         }
 
-        playHistory.forEach((track, idx) => {
+        tracks.forEach((track, idx) => {
             const card = document.createElement('div');
             card.className = 'song-card';
             card.innerHTML = `
                 <div class="card-thumb-container">
                     <img src="${track.thumbnail}" alt="${track.title}" class="card-thumb" onerror="this.src='synthwave_album_cover.jpg'">
                     <button class="play-hover-btn" title="Play">
-                        <svg viewBox="0 0 24 24" width="24" height="24" fill="#000"><path d="M8 5v14l11-7z"/></svg>
+                        <svg viewBox="0 0 24 24" width="20" height="20" fill="#000"><path d="M8 5v14l11-7z"/></svg>
                     </button>
                 </div>
                 <div class="song-info">
                     <div class="card-title">${track.title}</div>
                     <div class="card-artist clickable-artist">${track.uploader}</div>
-                    <div class="card-duration">Played: ${track.playedAt || ''}</div>
+                    <div class="card-duration">${track.durationStr || ''}</div>
                 </div>
             `;
 
@@ -315,11 +317,12 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             card.addEventListener('click', () => {
-                currentTrackList = [...playHistory];
+                currentTrackList = [...tracks];
                 currentTrackIdx = idx;
                 playTrack(track);
             });
-            historyGrid.appendChild(card);
+
+            containerEl.appendChild(card);
         });
     }
 
@@ -330,6 +333,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 playHistory = [];
                 localStorage.setItem('spotify_play_history', JSON.stringify(playHistory));
                 updateHistoryCountUI();
+                renderHomePageSections();
                 renderHistoryGrid();
                 showToast("Listening history cleared");
             }
@@ -355,8 +359,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 setActivePlaylistItem(li);
                 showSection('search');
                 searchHeading.textContent = `Playlist: ${pl.name}`;
-                currentTrackList = [...pl.tracks];
-                renderSongsGrid(currentTrackList);
+                renderHorizontalTrackRow(document.getElementById('trendingGrid'), pl.tracks);
             });
 
             li.querySelector('.pl-del-btn').addEventListener('click', (e) => {
@@ -429,6 +432,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     pl.tracks.push(currentPlayingTrack);
                     localStorage.setItem('spotify_user_playlists', JSON.stringify(userPlaylists));
                     renderSidebarPlaylists();
+                    renderHomePageSections();
                     showToast(`Added to "${pl.name}" 🎵`);
                 } else {
                     showToast(`Track already in "${pl.name}"`);
@@ -441,7 +445,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // -------------------------------------------------------------
-    // 5. Featured Tracks & Artist Profiles
+    // 5. Featured Tracks, Trending YouTube Hits & Artist Profiles
     // -------------------------------------------------------------
     const defaultFeaturedTracks = [
         {
@@ -478,6 +482,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     ];
 
+    let trendingYouTubeTracks = [...defaultFeaturedTracks];
     let currentTrackList = [...defaultFeaturedTracks];
     let currentTrackIdx = 0;
     let currentPlayingTrack = defaultFeaturedTracks[0];
@@ -485,10 +490,34 @@ document.addEventListener('DOMContentLoaded', () => {
     let isShuffle = false;
     let isLoop = false;
 
+    // Fetch initial trending songs from YouTube
+    async function fetchInitialTrendingSongs() {
+        try {
+            const resp = await fetch(`/api/search?q=${encodeURIComponent("trending top music songs 2026")}`);
+            const data = await resp.json();
+            if (data.results && data.results.length > 0) {
+                trendingYouTubeTracks = data.results.map(r => ({ ...r, isYouTube: true }));
+                renderHomePageSections();
+            }
+        } catch (e) {
+            console.error("Initial trending fetch error:", e);
+        }
+    }
+
+    function renderHomePageSections() {
+        renderHorizontalTrackRow(document.getElementById('trendingGrid'), trendingYouTubeTracks);
+        renderHorizontalTrackRow(document.getElementById('recentHomeGrid'), playHistory);
+        renderHorizontalTrackRow(document.getElementById('likedHomeGrid'), likedSongs);
+        renderHorizontalTrackRow(document.getElementById('featuredGrid'), defaultFeaturedTracks);
+    }
+
+    function renderHistoryGrid() {
+        renderHorizontalTrackRow(document.getElementById('historyGrid'), playHistory);
+    }
+
     // UI References
     const ytSearchInput = document.getElementById('ytSearchInput');
     const btnDoSearch = document.getElementById('btnDoSearch');
-    const songsGrid = document.getElementById('songsGrid');
     const searchStatusText = document.getElementById('searchStatusText');
     const searchHeading = document.getElementById('searchHeading');
 
@@ -589,34 +618,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const resp = await fetch(`/api/search?q=${encodeURIComponent(artist + " top songs")}`);
             const data = await resp.json();
             if (data.results) {
-                renderArtistTopGrid(data.results);
+                renderHorizontalTrackRow(artistTopGrid, data.results);
             }
         } catch (e) {
             console.error(e);
         }
-    }
-
-    function renderArtistTopGrid(tracks) {
-        artistTopGrid.innerHTML = '';
-        tracks.forEach((track) => {
-            const card = document.createElement('div');
-            card.className = 'song-card';
-            card.innerHTML = `
-                <div class="card-thumb-container">
-                    <img src="${track.thumbnail}" alt="${track.title}" class="card-thumb" onerror="this.src='synthwave_album_cover.jpg'">
-                    <button class="play-hover-btn" title="Play">
-                        <svg viewBox="0 0 24 24" width="24" height="24" fill="#000"><path d="M8 5v14l11-7z"/></svg>
-                    </button>
-                </div>
-                <div class="song-info">
-                    <div class="card-title">${track.title}</div>
-                    <div class="card-artist">${track.uploader}</div>
-                    <div class="card-duration">${track.durationStr || ''}</div>
-                </div>
-            `;
-            card.addEventListener('click', () => playTrack(track));
-            artistTopGrid.appendChild(card);
-        });
     }
 
     nowPlayingArtist.addEventListener('click', (e) => {
@@ -639,44 +645,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Render Songs Grid
-    function renderSongsGrid(tracks) {
-        songsGrid.innerHTML = '';
-        if (!tracks || tracks.length === 0) {
-            songsGrid.innerHTML = '<div style="color:var(--text-sub); grid-column: 1/-1; text-align:center; padding:3rem;">No tracks found. Search for a song or artist above!</div>';
-            return;
-        }
-
-        tracks.forEach((track, idx) => {
-            const card = document.createElement('div');
-            card.className = 'song-card';
-            card.innerHTML = `
-                <div class="card-thumb-container">
-                    <img src="${track.thumbnail}" alt="${track.title}" class="card-thumb" onerror="this.src='synthwave_album_cover.jpg'">
-                    <button class="play-hover-btn" title="Play">
-                        <svg viewBox="0 0 24 24" width="24" height="24" fill="#000"><path d="M8 5v14l11-7z"/></svg>
-                    </button>
-                </div>
-                <div class="song-info">
-                    <div class="card-title">${track.title}</div>
-                    <div class="card-artist clickable-artist">${track.uploader}</div>
-                    <div class="card-duration">${track.durationStr || ''}</div>
-                </div>
-            `;
-            
-            card.querySelector('.clickable-artist').addEventListener('click', (e) => {
-                e.stopPropagation();
-                openArtistProfile(track.uploader, track.thumbnail);
-            });
-
-            card.addEventListener('click', () => {
-                currentTrackIdx = idx;
-                playTrack(track);
-            });
-            songsGrid.appendChild(card);
-        });
-    }
-
     // Search YouTube (Bulletproof with Multi-Tier Fallback)
     async function searchYouTube(query) {
         if (!query.trim()) return;
@@ -689,7 +657,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (data.results && data.results.length > 0) {
                 currentTrackList = data.results.map(r => ({ ...r, isYouTube: true }));
-                renderSongsGrid(currentTrackList);
+                renderHorizontalTrackRow(document.getElementById('trendingGrid'), currentTrackList);
                 searchStatusText.textContent = `Found ${data.results.length} ad-free tracks. Tap any song to play!`;
                 return;
             }
@@ -713,7 +681,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }));
                 if (results.length > 0) {
                     currentTrackList = results;
-                    renderSongsGrid(currentTrackList);
+                    renderHorizontalTrackRow(document.getElementById('trendingGrid'), results);
                     searchStatusText.textContent = `Found ${results.length} ad-free tracks via client proxy.`;
                     return;
                 }
@@ -731,7 +699,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // -------------------------------------------------------------
-    // 6. Failproof Direct Audio Stream & Playback Engine
+    // 6. Failproof Direct Audio Stream & Playback Engine (Desktop & Mobile)
     // -------------------------------------------------------------
     function playTrack(track) {
         initAudioEngine();
@@ -758,7 +726,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             // Built-in Synthesizer Track
             isClientPlayerActive = false;
-            if (ytClientPlayer && ytClientPlayer.stopVideo) ytClientPlayer.stopVideo();
+            if (ytClientPlayer && typeof ytClientPlayer.stopVideo === 'function') ytClientPlayer.stopVideo();
             playBuiltinSynthTrack();
         }
     }
@@ -768,11 +736,14 @@ document.addEventListener('DOMContentLoaded', () => {
         youtubeAudioPlayer.pause();
 
         initYTPlayer();
-        if (ytClientPlayer && ytClientPlayer.loadVideoById) {
+        if (ytClientPlayer && typeof ytClientPlayer.loadVideoById === 'function') {
             ytClientPlayer.loadVideoById(videoId);
+            if (typeof ytClientPlayer.playVideo === 'function') {
+                ytClientPlayer.playVideo();
+            }
             setPlayState(true);
         } else {
-            setTimeout(() => playViaClientYTPlayer(videoId), 400);
+            setTimeout(() => playViaClientYTPlayer(videoId), 300);
         }
     }
 
@@ -794,10 +765,10 @@ document.addEventListener('DOMContentLoaded', () => {
     function togglePlayPause() {
         if (isClientPlayerActive && ytClientPlayer) {
             if (isPlaying) {
-                ytClientPlayer.pauseVideo();
+                if (typeof ytClientPlayer.pauseVideo === 'function') ytClientPlayer.pauseVideo();
                 setPlayState(false);
             } else {
-                ytClientPlayer.playVideo();
+                if (typeof ytClientPlayer.playVideo === 'function') ytClientPlayer.playVideo();
                 setPlayState(true);
             }
             return;
@@ -887,6 +858,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         localStorage.setItem('spotify_liked_songs', JSON.stringify(likedSongs));
         updateLikedCountUI();
+        renderHomePageSections();
     }
 
     btnLikeTrack.addEventListener('click', (e) => { e.stopPropagation(); toggleLikeCurrentTrack(); });
@@ -1322,10 +1294,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // -------------------------------------------------------------
     // 10. Navigation & Section Switching
     // -------------------------------------------------------------
-    document.getElementById('navHome').addEventListener('click', (e) => { e.preventDefault(); setActiveNav('navHome'); showSection('search'); renderSongsGrid(defaultFeaturedTracks); setChipActive('chipAll'); });
+    document.getElementById('navHome').addEventListener('click', (e) => { e.preventDefault(); setActiveNav('navHome'); showSection('search'); renderHomePageSections(); setChipActive('chipAll'); });
     document.getElementById('navSearch').addEventListener('click', (e) => { e.preventDefault(); setActiveNav('navSearch'); showSection('search'); ytSearchInput.focus(); setChipActive('chipAll'); });
     document.getElementById('navHistory').addEventListener('click', (e) => { e.preventDefault(); setActiveNav('navHistory'); showSection('history'); renderHistoryGrid(); setChipActive('chipHistory'); });
-    document.getElementById('navLibrary').addEventListener('click', (e) => { e.preventDefault(); setActiveNav('navLibrary'); showSection('search'); searchHeading.textContent = "Your Liked Songs Library"; currentTrackList = [...likedSongs]; renderSongsGrid(currentTrackList); setChipActive('chipLiked'); });
+    document.getElementById('navLibrary').addEventListener('click', (e) => { e.preventDefault(); setActiveNav('navLibrary'); showSection('search'); searchHeading.textContent = "Your Liked Songs Library"; renderHorizontalTrackRow(document.getElementById('trendingGrid'), likedSongs); setChipActive('chipLiked'); });
     document.getElementById('navLyrics').addEventListener('click', (e) => { e.preventDefault(); setActiveNav('navLyrics'); showSection('lyrics'); });
     document.getElementById('navEqualizer').addEventListener('click', (e) => { e.preventDefault(); setActiveNav('navEqualizer'); showSection('equalizer'); });
     document.getElementById('navSynth').addEventListener('click', (e) => { e.preventDefault(); setActiveNav('navSynth'); showSection('synth'); });
@@ -1336,9 +1308,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const mNavLibrary = document.getElementById('mNavLibrary');
     const mNavLyrics = document.getElementById('mNavLyrics');
 
-    if (mNavHome) mNavHome.addEventListener('click', (e) => { e.preventDefault(); setMobileNavActive(mNavHome); showSection('search'); renderSongsGrid(defaultFeaturedTracks); setChipActive('chipAll'); });
+    if (mNavHome) mNavHome.addEventListener('click', (e) => { e.preventDefault(); setMobileNavActive(mNavHome); showSection('search'); renderHomePageSections(); setChipActive('chipAll'); });
     if (mNavSearch) mNavSearch.addEventListener('click', (e) => { e.preventDefault(); setMobileNavActive(mNavSearch); showSection('search'); ytSearchInput.focus(); setChipActive('chipAll'); });
-    if (mNavLibrary) mNavLibrary.addEventListener('click', (e) => { e.preventDefault(); setMobileNavActive(mNavLibrary); showSection('search'); searchHeading.textContent = "Your Liked Songs Library"; currentTrackList = [...likedSongs]; renderSongsGrid(currentTrackList); setChipActive('chipLiked'); });
+    if (mNavLibrary) mNavLibrary.addEventListener('click', (e) => { e.preventDefault(); setMobileNavActive(mNavLibrary); showSection('search'); searchHeading.textContent = "Your Liked Songs Library"; renderHorizontalTrackRow(document.getElementById('trendingGrid'), likedSongs); setChipActive('chipLiked'); });
     if (mNavLyrics) mNavLyrics.addEventListener('click', (e) => { e.preventDefault(); setMobileNavActive(mNavLyrics); showSection('lyrics'); });
 
     function setMobileNavActive(element) {
@@ -1346,7 +1318,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (element) element.classList.add('active');
     }
 
-    document.getElementById('plLiked').addEventListener('click', () => { setActivePlaylistItem(document.getElementById('plLiked')); showSection('search'); searchHeading.textContent = "Your Liked Songs Library"; currentTrackList = [...likedSongs]; renderSongsGrid(currentTrackList); setChipActive('chipLiked'); });
+    document.getElementById('plLiked').addEventListener('click', () => { setActivePlaylistItem(document.getElementById('plLiked')); showSection('search'); searchHeading.textContent = "Your Liked Songs Library"; renderHorizontalTrackRow(document.getElementById('trendingGrid'), likedSongs); setChipActive('chipLiked'); });
     document.getElementById('plHistory').addEventListener('click', () => { setActivePlaylistItem(document.getElementById('plHistory')); showSection('history'); renderHistoryGrid(); setChipActive('chipHistory'); });
     document.getElementById('plTrending').addEventListener('click', () => { setActivePlaylistItem(document.getElementById('plTrending')); showSection('search'); searchYouTube('trending music songs 2026'); setChipActive('chipYouTube'); });
     document.getElementById('plSynth').addEventListener('click', () => { setActivePlaylistItem(document.getElementById('plSynth')); showSection('synth'); });
@@ -1403,14 +1375,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Filter Chips
-    document.getElementById('chipAll').addEventListener('click', () => { setChipActive('chipAll'); showSection('search'); currentTrackList = [...defaultFeaturedTracks]; renderSongsGrid(currentTrackList); });
+    document.getElementById('chipAll').addEventListener('click', () => { setChipActive('chipAll'); showSection('search'); renderHomePageSections(); });
     document.getElementById('chipHistory').addEventListener('click', () => { setChipActive('chipHistory'); showSection('history'); renderHistoryGrid(); });
     document.getElementById('chipYouTube').addEventListener('click', () => { setChipActive('chipYouTube'); showSection('search'); searchYouTube('trending music songs 2026'); });
     document.getElementById('chipArtist').addEventListener('click', () => { setChipActive('chipArtist'); openArtistProfile(currentPlayingTrack.uploader, currentPlayingTrack.thumbnail); });
-    document.getElementById('chipLiked').addEventListener('click', () => { setChipActive('chipLiked'); showSection('search'); searchHeading.textContent = "Your Liked Songs Library"; currentTrackList = [...likedSongs]; renderSongsGrid(currentTrackList); });
+    document.getElementById('chipLiked').addEventListener('click', () => { setChipActive('chipLiked'); showSection('search'); searchHeading.textContent = "Your Liked Songs Library"; renderHorizontalTrackRow(document.getElementById('trendingGrid'), likedSongs); });
     document.getElementById('chipVisualizer').addEventListener('click', () => { setChipActive('chipVisualizer'); showSection('visualizer'); });
 
-    // Init
-    renderSongsGrid(defaultFeaturedTracks);
+    // Init Application
+    fetchInitialTrendingSongs();
+    renderHomePageSections();
     drawSpotifyVisualizer();
 });
