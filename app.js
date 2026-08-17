@@ -996,13 +996,45 @@ document.addEventListener('DOMContentLoaded', () => {
     if (mPlayerNext) mPlayerNext.addEventListener('click', (e) => { e.stopPropagation(); playNextTrack(); });
     if (mPlayerPrev) mPlayerPrev.addEventListener('click', (e) => { e.stopPropagation(); playPrevTrack(); });
 
+    let isFetchingRelated = false;
+
+    async function fetchAndQueueRelated(videoId) {
+        if (isFetchingRelated) return;
+        isFetchingRelated = true;
+        try {
+            const resp = await fetch(`/api/related?id=${videoId}`);
+            const data = await resp.json();
+            if (data.results && data.results.length > 0) {
+                const newTracks = data.results
+                    .filter(r => !currentTrackList.some(t => t.id === r.id))
+                    .map(r => ({ ...r, isYouTube: true }));
+                if (newTracks.length > 0) {
+                    currentTrackList = [...currentTrackList, ...newTracks];
+                    showToast(`Auto-queued ${newTracks.length} related songs 🎵`);
+                }
+            }
+        } catch (e) {
+            console.error("Related songs fetch error:", e);
+        }
+        isFetchingRelated = false;
+    }
+
     function playNextTrack() {
         if (currentTrackList.length === 0) return;
         if (isShuffle) {
             currentTrackIdx = Math.floor(Math.random() * currentTrackList.length);
-        } else {
-            currentTrackIdx = (currentTrackIdx + 1) % currentTrackList.length;
+            playTrack(currentTrackList[currentTrackIdx]);
+            return;
         }
+
+        const nextIdx = currentTrackIdx + 1;
+
+        // If we're near the end of the list, fetch related songs in the background
+        if (nextIdx >= currentTrackList.length - 2 && currentPlayingTrack && currentPlayingTrack.isYouTube) {
+            fetchAndQueueRelated(currentPlayingTrack.id);
+        }
+
+        currentTrackIdx = nextIdx % currentTrackList.length;
         playTrack(currentTrackList[currentTrackIdx]);
     }
 

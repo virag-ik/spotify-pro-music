@@ -95,6 +95,77 @@ def search_youtube_innertube(query):
         print(f"InnerTube search error: {e}")
     return results
 
+def get_related_videos(video_id):
+    """Fetch related/recommended videos for a given YouTube video using InnerTube."""
+    url = "https://www.youtube.com/youtubei/v1/next?prettyPrint=false"
+    body = {
+        "context": {
+            "client": {
+                "clientName": "WEB",
+                "clientVersion": "2.20260101.00.00",
+                "hl": "en",
+                "gl": "US"
+            }
+        },
+        "videoId": video_id
+    }
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    }
+    results = []
+    try:
+        req = urllib.request.Request(url, data=json.dumps(body).encode('utf-8'), headers=headers, method='POST')
+        with urllib.request.urlopen(req, timeout=8, context=ssl_ctx) as resp:
+            data = json.loads(resp.read().decode('utf-8', 'replace'))
+            panels = (
+                data.get("contents", {})
+                .get("twoColumnWatchNextResults", {})
+                .get("secondaryResults", {})
+                .get("secondaryResults", {})
+                .get("results", [])
+            )
+            for panel in panels:
+                vr = panel.get("compactVideoRenderer")
+                if not vr:
+                    continue
+                v_id = vr.get("videoId")
+                if not v_id or v_id == video_id:
+                    continue
+                title_runs = (vr.get("title") or {}).get("simpleText") or ""
+                if not title_runs:
+                    t_runs = (vr.get("title") or {}).get("runs") or []
+                    title_runs = "".join(r.get("text", "") for r in t_runs)
+                owner_runs = (vr.get("longBylineText") or vr.get("shortBylineText") or {}).get("runs") or []
+                uploader = "".join(r.get("text", "") for r in owner_runs) or "YouTube Artist"
+                dur_str = ((vr.get("lengthText") or {}).get("simpleText")) or ""
+
+                dur_secs = 0
+                if dur_str:
+                    parts = dur_str.split(':')
+                    try:
+                        if len(parts) == 2:
+                            dur_secs = int(parts[0]) * 60 + int(parts[1])
+                        elif len(parts) == 3:
+                            dur_secs = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+                    except ValueError:
+                        dur_secs = 0
+
+                results.append({
+                    'id': v_id,
+                    'title': title_runs or "Unknown Track",
+                    'uploader': uploader,
+                    'thumbnail': f"https://i.ytimg.com/vi/{v_id}/hqdefault.jpg",
+                    'duration': dur_secs,
+                    'durationStr': dur_str or format_dur(dur_secs),
+                    'youtubeUrl': f"https://www.youtube.com/watch?v={v_id}"
+                })
+                if len(results) >= 15:
+                    break
+    except Exception as e:
+        print(f"InnerTube related videos error: {e}")
+    return results
+
 def get_audio_stream_url(video_id):
     """Extract a direct audio stream URL for a YouTube video via Cobalt API."""
     api_url = "https://api.cobalt.tools/api/json"
@@ -278,6 +349,17 @@ class SpotifyYouTubeHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_json_response({'url': audio_url, 'id': video_id})
             else:
                 self.send_json_response({'error': 'Could not resolve audio stream', 'id': video_id}, 404)
+            return
+
+        # Related Videos Endpoint — returns recommended songs for auto-play
+        elif path == '/api/related':
+            video_id = query.get('id', [''])[0]
+            if not video_id:
+                self.send_json_response({'error': 'Missing video id'}, 400)
+                return
+
+            results = get_related_videos(video_id)
+            self.send_json_response({'results': results, 'id': video_id})
             return
 
         super().do_GET()
