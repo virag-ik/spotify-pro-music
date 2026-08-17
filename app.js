@@ -964,7 +964,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        if (!currentPlayingTrack.isYouTube) {
+        if (currentPlayingTrack && !currentPlayingTrack.isYouTube) {
             if (isPlaying) {
                 setPlayState(false);
                 if (synthLoopTimer) clearInterval(synthLoopTimer);

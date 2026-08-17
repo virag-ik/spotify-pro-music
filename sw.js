@@ -1,4 +1,4 @@
-const CACHE_NAME = 'spotify-pro-cache-v4';
+const CACHE_NAME = 'spotify-pro-cache-v5';
 const urlsToCache = [
   '/',
   '/index.html',
@@ -9,6 +9,7 @@ const urlsToCache = [
 ];
 
 self.addEventListener('install', event => {
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(cache => {
@@ -24,29 +25,36 @@ self.addEventListener('fetch', event => {
   // Don't intercept API calls
   if (event.request.url.includes('/api/')) return;
 
+  // Network-first strategy: always try fresh content, fall back to cache
   event.respondWith(
-    caches.match(event.request)
-      .then(response => {
-        // Return cached version or fetch from network
-        return response || fetch(event.request).then(fetchResponse => {
-            // Optional: cache new network requests dynamically here
-            return fetchResponse;
+    fetch(event.request)
+      .then(networkResponse => {
+        // Update cache with fresh response
+        const responseClone = networkResponse.clone();
+        caches.open(CACHE_NAME).then(cache => {
+          cache.put(event.request, responseClone);
         });
+        return networkResponse;
+      })
+      .catch(() => {
+        // Network failed, serve from cache (offline support)
+        return caches.match(event.request);
       })
   );
 });
 
 self.addEventListener('activate', event => {
-  const cacheWhitelist = [CACHE_NAME];
   event.waitUntil(
     caches.keys().then(cacheNames => {
       return Promise.all(
         cacheNames.map(cacheName => {
-          if (cacheWhitelist.indexOf(cacheName) === -1) {
+          if (cacheName !== CACHE_NAME) {
             return caches.delete(cacheName);
           }
         })
       );
+    }).then(() => {
+      return self.clients.claim();
     })
   );
 });
