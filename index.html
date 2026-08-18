@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=2">
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#121212">
     <link rel="apple-touch-icon" href="icon.jpg">
@@ -456,11 +456,11 @@
     <!-- Hidden Audio Element for Mobile Background Audio Focus Keep-Alive -->
     <audio id="youtubeAudioPlayer" playsinline preload="auto"></audio>
 
-    <script src="app.js"></script>
+    <script src="app.js?v=2"></script>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/sw.js').then(registration => {
+                navigator.serviceWorker.register('/sw.js?v=2').then(registration => {
                     registration.update(); // Force update check on every load
                     console.log('ServiceWorker registration successful with scope: ', registration.scope);
                 }).catch(err => {
