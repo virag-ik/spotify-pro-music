@@ -224,23 +224,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Tab visibility listener for background play persistence
-    document.addEventListener('visibilitychange', () => {
-        if (!isPlaying) return;
-
-        if (!document.hidden) {
-            // Tab returning to foreground — resume if browser paused us
-            if (audioCtx && audioCtx.state === 'suspended') {
-                audioCtx.resume().catch(() => {});
-            }
-            if (isAudioElementPlaying && youtubeAudioPlayer.paused) {
-                youtubeAudioPlayer.play().catch(() => {});
-            }
-            if (isClientPlayerActive && ytClientPlayer && typeof ytClientPlayer.playVideo === 'function') {
-                ytClientPlayer.playVideo();
-            }
-        }
-    });
 
     // Automatic Error Recovery on restricted/blocked video embedding (iframe fallback)
     async function onClientPlayerError(event) {
