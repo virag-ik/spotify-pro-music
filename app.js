@@ -11,16 +11,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const youtubeAudioPlayer = document.getElementById('youtubeAudioPlayer');
 
-    // Background audio keep-alive: plays near-inaudible tone through AudioContext
-    // to maintain Android Chrome audio session when the tab is backgrounded.
-    let bgKeepAliveOsc = null;
-    let bgKeepAliveGain = null;
-
-    function ensureBackgroundAudioKeepAlive() {
-        // Removed: Native HTML5 <audio> tag with a direct stream handles background play natively.
-        // The oscillator interfered with the Android notification pause button.
-        return;
-    }
 
     function initAudioEngine() {
         if (!audioCtx) {
@@ -54,7 +44,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     audioSourceNode.connect(eqFilters[0]);
                     eqFilters[eqFilters.length - 1].connect(masterGain);
                 } catch (err) {
-                    console.log("Audio media element connection note:", err);
+
                 }
 
                 masterGain.connect(analyserNode);
@@ -151,7 +141,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function onPlayerReady() {
         ytPlayerReady = true;
-        console.log("YouTube IFrame Player ready");
         if (pendingVideoId) {
             const vid = pendingVideoId;
             pendingVideoId = null;
@@ -174,16 +163,7 @@ document.addEventListener('DOMContentLoaded', () => {
             setPlayState(true);
             searchStatusText.textContent = `Now Playing: ${currentPlayingTrack ? currentPlayingTrack.title : ''}`;
         } else if (event.data === YT.PlayerState.PAUSED) {
-            // Prevent accidental background pause on mobile browser backgrounding
-            if (document.hidden && isPlaying) {
-                setTimeout(() => {
-                    if (ytClientPlayer && typeof ytClientPlayer.playVideo === 'function') {
-                        ytClientPlayer.playVideo();
-                    }
-                }, 100);
-            } else {
-                setPlayState(false);
-            }
+            setPlayState(false);
         } else if (event.data === YT.PlayerState.ENDED) {
             if (isLoop && currentPlayingTrack) {
                 playTrack(currentPlayingTrack);
@@ -742,30 +722,6 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error("Primary search error, trying client fallback:", err);
         }
 
-        // Client-side Invidious search fallback if server search fails
-        try {
-            const fallbackUrl = `https://inv.tux.pizza/api/v1/search?q=${encodeURIComponent(query)}`;
-            const fbResp = await fetch(fallbackUrl);
-            const fbData = await fbResp.json();
-            if (Array.isArray(fbData) && fbData.length > 0) {
-                const results = fbData.filter(item => item.type === 'video').map(v => ({
-                    id: v.videoId,
-                    title: v.title,
-                    uploader: v.author,
-                    thumbnail: `https://i.ytimg.com/vi/${v.videoId}/hqdefault.jpg`,
-                    durationStr: formatSecs(v.lengthSeconds),
-                    isYouTube: true
-                }));
-                if (results.length > 0) {
-                    currentTrackList = results;
-                    renderHorizontalTrackRow(document.getElementById('trendingGrid'), results);
-                    searchStatusText.textContent = `Found ${results.length} ad-free tracks via client proxy.`;
-                    return;
-                }
-            }
-        } catch (fbErr) {
-            console.error("Client search fallback error:", fbErr);
-        }
 
         searchStatusText.textContent = `No results found for "${query}". Try another song name!`;
     }
@@ -813,7 +769,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 navigator.mediaSession.setActionHandler('previoustrack', () => playPrevTrack());
                 navigator.mediaSession.setActionHandler('nexttrack', () => playNextTrack());
             } catch (e) {
-                console.log("MediaSession setup note:", e);
             }
         }
     }
@@ -826,7 +781,6 @@ document.addEventListener('DOMContentLoaded', () => {
         currentPlayingTrack = track;
         addToPlayHistory(track);
         updateMediaSession(track);
-        ensureBackgroundAudioKeepAlive();
 
         nowPlayingCover.src = track.thumbnail;
         nowPlayingTitle.textContent = track.title;
@@ -874,12 +828,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     isClientPlayerActive = false;
                     setPlayState(true);
                     searchStatusText.textContent = `Now Playing: "${currentPlayingTrack ? currentPlayingTrack.title : ''}"`;
-                    console.log("Playing via direct audio stream");
                     return;
                 }
             }
         } catch (e) {
-            console.log("Direct audio stream failed, trying iframe player:", e);
         }
 
         // Method 2: Fall back to YT IFrame Player

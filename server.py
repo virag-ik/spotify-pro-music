@@ -9,10 +9,6 @@ import time
 import ssl
 import re
 
-try:
-    import yt_dlp
-except ImportError:
-    yt_dlp = None
 
 PORT = int(os.environ.get('PORT', 8080))
 ssl_ctx = ssl.create_default_context()
@@ -193,47 +189,8 @@ def get_audio_stream_url(video_id):
 
     return None
 
-def search_youtube_ytdlp(query):
-    """Secondary search using yt_dlp flat extraction."""
-    if not yt_dlp:
-        return []
-    results = []
-    try:
-        ydl_opts = {
-            'format': 'bestaudio/best',
-            'quiet': True,
-            'no_warnings': True,
-            'nocheckcertificate': True,
-            'ignoreerrors': True,
-            'extract_flat': True,
-            'skip_download': True,
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15',
-                'Accept-Language': 'en-US,en;q=0.9',
-            }
-        }
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            res = ydl.extract_info(f"ytsearch12:{query}", download=False)
-            entries = res.get('entries', []) if res else []
-            for entry in entries:
-                if entry:
-                    v_id = entry.get('id')
-                    dur = entry.get('duration', 0)
-                    results.append({
-                        'id': v_id,
-                        'title': entry.get('title', 'Unknown Track'),
-                        'uploader': entry.get('uploader') or entry.get('channel', 'YouTube Artist'),
-                        'thumbnail': f"https://i.ytimg.com/vi/{v_id}/hqdefault.jpg",
-                        'duration': dur or 0,
-                        'durationStr': format_dur(dur or 0),
-                        'youtubeUrl': f"https://www.youtube.com/watch?v={v_id}"
-                    })
-    except Exception as e:
-        print(f"yt-dlp search exception: {e}")
-    return results
-
 def search_youtube_fallback(query):
-    """Tertiary search fallback using public Piped/Invidious APIs."""
+    """Secondary search fallback using public Piped/Invidious APIs."""
     apis = [
         f"https://pipedapi.kavin.rocks/search?q={urllib.parse.quote(query)}&filter=all",
         f"https://api.piped.video/search?q={urllib.parse.quote(query)}&filter=all",
@@ -317,24 +274,9 @@ class SpotifyYouTubeHandler(http.server.SimpleHTTPRequestHandler):
             # Execute tiered search
             results = search_youtube_innertube(search_query)
             if not results:
-                results = search_youtube_ytdlp(search_query)
-            if not results:
                 results = search_youtube_fallback(search_query)
 
             self.send_json_response({'results': results})
-            return
-
-        # Stream Resolution Endpoint (legacy)
-        elif path == '/api/stream':
-            video_id = query.get('id', [''])[0]
-            if not video_id:
-                self.send_json_response({'error': 'Missing video id'}, 400)
-                return
-
-            self.send_json_response({
-                'id': video_id,
-                'useClientPlayer': True
-            })
             return
 
         # Direct Audio URL Endpoint — returns a playable audio stream URL
