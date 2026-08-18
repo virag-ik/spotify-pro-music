@@ -1,17 +1,18 @@
 /* Spotify Dark Aesthetic & Spotify Pro CSS (100% Dynamic Responsive) */
 :root {
-    --sp-bg-black: #000000;
-    --sp-bg-dark: #121212;
-    --sp-card-bg: #181818;
-    --sp-card-hover: #282828;
-    --sp-green: #1db954;
+    --sp-bg-black: #050505;
+    --sp-bg-dark: #0a0a0a;
+    --sp-card-bg: rgba(24, 24, 24, 0.4);
+    --sp-card-hover: rgba(40, 40, 40, 0.6);
+    --sp-green: #1ed760; /* Brighter neon green */
     --sp-green-hover: #1ed760;
     
     --text-white: #ffffff;
     --text-sub: #b3b3b3;
     --text-muted: #6a6a6a;
     
-    --font-spotify: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-spotify: 'Plus Jakarta Sans', sans-serif;
+    --font-inter: 'Inter', sans-serif;
     --font-mono: 'Space Grotesk', monospace;
 }
 
@@ -24,11 +25,18 @@
 
 body {
     background-color: var(--sp-bg-black);
+    background-image: 
+        radial-gradient(at 0% 0%, rgba(29, 185, 84, 0.15) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(29, 185, 84, 0.08) 0px, transparent 50%);
+    background-attachment: fixed;
     color: var(--text-white);
-    font-family: var(--font-spotify);
+    font-family: var(--font-inter);
     height: 100vh;
     height: -webkit-fill-available;
     overflow: hidden;
+}
+h1, h2, h3, .brand h2, .card-title {
+    font-family: var(--font-spotify);
 }
 
 /* App Container Layout */
@@ -44,6 +52,10 @@ body {
 /* Sidebar (Desktop / Laptop) */
 .sidebar {
     background-color: var(--sp-bg-black);
+    background: rgba(5, 5, 5, 0.65);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-right: 1px solid rgba(255, 255, 255, 0.05);
     border-radius: 8px;
     display: flex;
     flex-direction: column;
@@ -463,6 +475,10 @@ body {
 
 .song-card {
     background: var(--sp-card-bg);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.03);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+    border-radius: 12px;
     border-radius: 8px;
     padding: 0.85rem;
     display: flex;

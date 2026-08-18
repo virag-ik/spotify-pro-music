@@ -1,8 +1,23 @@
-// Spotify PRO Dynamic Audio Engine & Application Logic
+/**
+ * ============================================================================
+ * SPOTIFY PRO - APPLICATION KERNEL
+ * ============================================================================
+ * This codebase uses a virtual module architecture to maintain state and UI.
+ * 
+ * MODULE INDEX:
+ * 1. [STATE] Global Application State
+ * 2. [AUDIO] Web Audio API & Synth Engine
+ * 3. [PLAYER] YouTube IFrame & HTML5 Media Controllers
+ * 4. [API] Network Fetching & Recommendation Engine
+ * 5. [UI] DOM Management, Rendering & Navigation
+ * 6. [STORAGE] LocalStorage Persistence (History/Playlists)
+ * ============================================================================
+ */
+
 document.addEventListener('DOMContentLoaded', () => {
-    // -------------------------------------------------------------
-    // 1. Audio Context & Master Equalizer Setup
-    // -------------------------------------------------------------
+    // ==========================================
+    // [MODULE: 1. STATE] Global State & Context
+    // ==========================================
     let audioCtx = null;
     let masterGain = null;
     let analyserNode = null;
@@ -11,7 +26,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const youtubeAudioPlayer = document.getElementById('youtubeAudioPlayer');
 
-
+    // ==========================================
+    // [MODULE: 2. AUDIO] Web Audio API & Synth
+    // ==========================================
     function initAudioEngine() {
         if (!audioCtx) {
             try {

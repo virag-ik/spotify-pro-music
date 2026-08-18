@@ -1,4 +1,4 @@
-const CACHE_NAME = 'spotify-pro-cache-v5';
+const CACHE_NAME = 'spotify-pro-cache-v6';
 const urlsToCache = [
   '/',
   '/index.html',
@@ -27,7 +27,7 @@ self.addEventListener('fetch', event => {
 
   // Network-first strategy: always try fresh content, fall back to cache
   event.respondWith(
-    fetch(event.request)
+    fetch(event.request, { cache: 'no-store' }) // Force network bypass of browser HTTP cache
       .then(networkResponse => {
         // Update cache with fresh response
         const responseClone = networkResponse.clone();
