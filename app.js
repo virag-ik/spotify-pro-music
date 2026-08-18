@@ -378,7 +378,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Universal Horizontal Track Row Renderer
-    function renderHorizontalTrackRow(containerEl, tracks) {
+    function renderHorizontalTrackRow(containerEl, tracks, curated = false) {
         if (!containerEl) return;
         containerEl.innerHTML = '';
         if (!tracks || tracks.length === 0) {
@@ -411,6 +411,7 @@ document.addEventListener('DOMContentLoaded', () => {
             card.addEventListener('click', () => {
                 currentTrackList = [...tracks];
                 currentTrackIdx = idx;
+                isCuratedList = curated;
                 playTrack(track);
             });
 
@@ -451,7 +452,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 setActivePlaylistItem(li);
                 showSection('search');
                 searchHeading.textContent = `Playlist: ${pl.name}`;
-                renderHorizontalTrackRow(document.getElementById('trendingGrid'), pl.tracks);
+                renderHorizontalTrackRow(document.getElementById('trendingGrid'), pl.tracks, true);
             });
 
             li.querySelector('.pl-del-btn').addEventListener('click', (e) => {
@@ -581,6 +582,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let isPlaying = false;
     let isShuffle = false;
     let isLoop = false;
+    let isCuratedList = false; // true when playing from liked songs or user playlists
 
     // Fetch initial trending songs from YouTube
     async function fetchInitialTrendingSongs() {
@@ -599,7 +601,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderHomePageSections() {
         renderHorizontalTrackRow(document.getElementById('trendingGrid'), trendingYouTubeTracks);
         renderHorizontalTrackRow(document.getElementById('recentHomeGrid'), playHistory);
-        renderHorizontalTrackRow(document.getElementById('likedHomeGrid'), likedSongs);
+        renderHorizontalTrackRow(document.getElementById('likedHomeGrid'), likedSongs, true);
         renderHorizontalTrackRow(document.getElementById('featuredGrid'), defaultFeaturedTracks);
     }
 
@@ -998,29 +1000,37 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let isFetchingRelated = false;
 
-    async function fetchAndQueueRelated(videoId) {
+    async function playRelatedSong(videoId) {
         if (isFetchingRelated) return;
         isFetchingRelated = true;
         try {
+            searchStatusText.textContent = `Finding a related song...`;
             const resp = await fetch(`/api/related?id=${videoId}`);
             const data = await resp.json();
             if (data.results && data.results.length > 0) {
-                const newTracks = data.results
-                    .filter(r => !currentTrackList.some(t => t.id === r.id))
-                    .map(r => ({ ...r, isYouTube: true }));
-                if (newTracks.length > 0) {
-                    currentTrackList = [...currentTrackList, ...newTracks];
-                    showToast(`Auto-queued ${newTracks.length} related songs 🎵`);
+                // Pick the first related song that isn't already the current song
+                const next = data.results.find(r => r.id !== videoId);
+                if (next) {
+                    const track = { ...next, isYouTube: true };
+                    currentTrackList = [currentPlayingTrack, track];
+                    currentTrackIdx = 1;
+                    isCuratedList = false;
+                    showToast(`Up next: ${track.title} 🎵`);
+                    playTrack(track);
+                    isFetchingRelated = false;
+                    return;
                 }
             }
         } catch (e) {
             console.error("Related songs fetch error:", e);
         }
         isFetchingRelated = false;
+        searchStatusText.textContent = `No related songs found.`;
     }
 
     function playNextTrack() {
         if (currentTrackList.length === 0) return;
+
         if (isShuffle) {
             currentTrackIdx = Math.floor(Math.random() * currentTrackList.length);
             playTrack(currentTrackList[currentTrackIdx]);
@@ -1029,13 +1039,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const nextIdx = currentTrackIdx + 1;
 
-        // If we're near the end of the list, fetch related songs in the background
-        if (nextIdx >= currentTrackList.length - 2 && currentPlayingTrack && currentPlayingTrack.isYouTube) {
-            fetchAndQueueRelated(currentPlayingTrack.id);
+        // If we're in a curated list (playlist/liked songs), loop through normally
+        if (isCuratedList) {
+            currentTrackIdx = nextIdx % currentTrackList.length;
+            playTrack(currentTrackList[currentTrackIdx]);
+            return;
         }
 
-        currentTrackIdx = nextIdx % currentTrackList.length;
-        playTrack(currentTrackList[currentTrackIdx]);
+        // If there's a next song in the list, play it
+        if (nextIdx < currentTrackList.length) {
+            currentTrackIdx = nextIdx;
+            playTrack(currentTrackList[currentTrackIdx]);
+            return;
+        }
+
+        // End of list in non-curated mode — use recommendation engine
+        if (currentPlayingTrack && currentPlayingTrack.isYouTube) {
+            playRelatedSong(currentPlayingTrack.id);
+        }
     }
 
     function playPrevTrack() {
@@ -1082,7 +1103,7 @@ document.addEventListener('DOMContentLoaded', () => {
         updateLikedCountUI();
         
         // Update liked UI without overwriting the current view
-        renderHorizontalTrackRow(document.getElementById('likedHomeGrid'), likedSongs);
+        renderHorizontalTrackRow(document.getElementById('likedHomeGrid'), likedSongs, true);
     }
 
     btnLikeTrack.addEventListener('click', (e) => { e.stopPropagation(); toggleLikeCurrentTrack(); });
@@ -1523,7 +1544,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('navHome').addEventListener('click', (e) => { e.preventDefault(); setActiveNav('navHome'); showSection('search'); renderHomePageSections(); setChipActive('chipAll'); });
     document.getElementById('navSearch').addEventListener('click', (e) => { e.preventDefault(); setActiveNav('navSearch'); showSection('search'); ytSearchInput.focus(); setChipActive('chipAll'); });
     document.getElementById('navHistory').addEventListener('click', (e) => { e.preventDefault(); setActiveNav('navHistory'); showSection('history'); renderHistoryGrid(); setChipActive('chipHistory'); });
-    document.getElementById('navLibrary').addEventListener('click', (e) => { e.preventDefault(); setActiveNav('navLibrary'); showSection('search'); searchHeading.textContent = "Your Liked Songs Library"; renderHorizontalTrackRow(document.getElementById('trendingGrid'), likedSongs); setChipActive('chipLiked'); });
+    document.getElementById('navLibrary').addEventListener('click', (e) => { e.preventDefault(); setActiveNav('navLibrary'); showSection('search'); searchHeading.textContent = "Your Liked Songs Library"; renderHorizontalTrackRow(document.getElementById('trendingGrid'), likedSongs, true); setChipActive('chipLiked'); });
     document.getElementById('navLyrics').addEventListener('click', (e) => { e.preventDefault(); setActiveNav('navLyrics'); showSection('lyrics'); });
     document.getElementById('navEqualizer').addEventListener('click', (e) => { e.preventDefault(); setActiveNav('navEqualizer'); showSection('equalizer'); });
     document.getElementById('navSynth').addEventListener('click', (e) => { e.preventDefault(); setActiveNav('navSynth'); showSection('synth'); });
@@ -1536,7 +1557,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (mNavHome) mNavHome.addEventListener('click', (e) => { e.preventDefault(); setMobileNavActive(mNavHome); showSection('search'); renderHomePageSections(); setChipActive('chipAll'); });
     if (mNavSearch) mNavSearch.addEventListener('click', (e) => { e.preventDefault(); setMobileNavActive(mNavSearch); showSection('search'); ytSearchInput.focus(); setChipActive('chipAll'); });
-    if (mNavLibrary) mNavLibrary.addEventListener('click', (e) => { e.preventDefault(); setMobileNavActive(mNavLibrary); showSection('search'); searchHeading.textContent = "Your Liked Songs Library"; renderHorizontalTrackRow(document.getElementById('trendingGrid'), likedSongs); setChipActive('chipLiked'); });
+    if (mNavLibrary) mNavLibrary.addEventListener('click', (e) => { e.preventDefault(); setMobileNavActive(mNavLibrary); showSection('search'); searchHeading.textContent = "Your Liked Songs Library"; renderHorizontalTrackRow(document.getElementById('trendingGrid'), likedSongs, true); setChipActive('chipLiked'); });
     if (mNavLyrics) mNavLyrics.addEventListener('click', (e) => { e.preventDefault(); setMobileNavActive(mNavLyrics); showSection('lyrics'); });
 
     function setMobileNavActive(element) {
@@ -1544,7 +1565,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (element) element.classList.add('active');
     }
 
-    document.getElementById('plLiked').addEventListener('click', () => { setActivePlaylistItem(document.getElementById('plLiked')); showSection('search'); searchHeading.textContent = "Your Liked Songs Library"; renderHorizontalTrackRow(document.getElementById('trendingGrid'), likedSongs); setChipActive('chipLiked'); });
+    document.getElementById('plLiked').addEventListener('click', () => { setActivePlaylistItem(document.getElementById('plLiked')); showSection('search'); searchHeading.textContent = "Your Liked Songs Library"; renderHorizontalTrackRow(document.getElementById('trendingGrid'), likedSongs, true); setChipActive('chipLiked'); });
     document.getElementById('plHistory').addEventListener('click', () => { setActivePlaylistItem(document.getElementById('plHistory')); showSection('history'); renderHistoryGrid(); setChipActive('chipHistory'); });
     document.getElementById('plTrending').addEventListener('click', () => { setActivePlaylistItem(document.getElementById('plTrending')); showSection('search'); searchYouTube('trending music songs 2026'); setChipActive('chipYouTube'); });
     document.getElementById('plSynth').addEventListener('click', () => { setActivePlaylistItem(document.getElementById('plSynth')); showSection('synth'); });
@@ -1605,7 +1626,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('chipHistory').addEventListener('click', () => { setChipActive('chipHistory'); showSection('history'); renderHistoryGrid(); });
     document.getElementById('chipYouTube').addEventListener('click', () => { setChipActive('chipYouTube'); showSection('search'); searchYouTube('trending music songs 2026'); });
     document.getElementById('chipArtist').addEventListener('click', () => { setChipActive('chipArtist'); openArtistProfile(currentPlayingTrack.uploader, currentPlayingTrack.thumbnail); });
-    document.getElementById('chipLiked').addEventListener('click', () => { setChipActive('chipLiked'); showSection('search'); searchHeading.textContent = "Your Liked Songs Library"; renderHorizontalTrackRow(document.getElementById('trendingGrid'), likedSongs); });
+    document.getElementById('chipLiked').addEventListener('click', () => { setChipActive('chipLiked'); showSection('search'); searchHeading.textContent = "Your Liked Songs Library"; renderHorizontalTrackRow(document.getElementById('trendingGrid'), likedSongs, true); });
     document.getElementById('chipVisualizer').addEventListener('click', () => { setChipActive('chipVisualizer'); showSection('visualizer'); });
 
     // Init Application
