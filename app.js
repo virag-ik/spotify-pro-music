@@ -1046,14 +1046,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // If there's a next song in the list, play it
-        if (nextIdx < currentTrackList.length) {
-            currentTrackIdx = nextIdx;
-            playTrack(currentTrackList[currentTrackIdx]);
-            return;
-        }
-
-        // End of list in non-curated mode — use recommendation engine
+        // Non-curated mode (Search, History, Trending) — always use recommendation engine immediately
         if (currentPlayingTrack && currentPlayingTrack.isYouTube) {
             playRelatedSong(currentPlayingTrack.id);
         }
