@@ -1,0 +1,9 @@
+{
+  "appId": "com.infistream.app",
+  "appName": "InfiStream",
+  "webDir": "www",
+  "server": {
+    "url": "https://infistream.onrender.com",
+    "cleartext": true
+  }
+}
