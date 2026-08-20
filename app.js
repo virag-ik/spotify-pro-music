@@ -751,40 +751,63 @@ document.addEventListener('DOMContentLoaded', () => {
     // -------------------------------------------------------------
     // Media Session API Integration for Mobile Background & Lockscreen Controls
     // -------------------------------------------------------------
-    function updateMediaSession(track) {
-        if ('mediaSession' in navigator && track) {
-            try {
-                navigator.mediaSession.metadata = new MediaMetadata({
-                    title: track.title,
-                    artist: track.uploader || 'Spotify PRO',
-                    album: 'Spotify PRO Music',
-                    artwork: [
-                        { src: track.thumbnail, sizes: '96x96', type: 'image/jpeg' },
-                        { src: track.thumbnail, sizes: '128x128', type: 'image/jpeg' },
-                        { src: track.thumbnail, sizes: '192x192', type: 'image/jpeg' },
-                        { src: track.thumbnail, sizes: '512x512', type: 'image/jpeg' }
-                    ]
-                });
+    // -------------------------------------------------------------
+    // Media Session API Integration for Mobile Background & Lockscreen Controls
+    // -------------------------------------------------------------
+    async function updateMediaSession(track) {
+        if (!track) return;
+        const metadata = {
+            title: track.title,
+            artist: track.uploader || 'InfiStream',
+            album: 'InfiStream Music',
+            artwork: [
+                { src: track.thumbnail, sizes: '96x96', type: 'image/jpeg' },
+                { src: track.thumbnail, sizes: '128x128', type: 'image/jpeg' },
+                { src: track.thumbnail, sizes: '192x192', type: 'image/jpeg' },
+                { src: track.thumbnail, sizes: '512x512', type: 'image/jpeg' }
+            ]
+        };
 
-                // Lockscreen & Notification Media Action Listeners
-                navigator.mediaSession.setActionHandler('play', () => {
-                    if (youtubeAudioPlayer && youtubeAudioPlayer.src) {
-                        youtubeAudioPlayer.play().catch(() => {});
-                    } else if (isClientPlayerActive && ytClientPlayer && typeof ytClientPlayer.playVideo === 'function') {
-                        ytClientPlayer.playVideo();
-                    }
-                    setPlayState(true);
-                });
-                navigator.mediaSession.setActionHandler('pause', () => {
-                    if (youtubeAudioPlayer && !youtubeAudioPlayer.paused) {
-                        youtubeAudioPlayer.pause();
-                    } else if (isClientPlayerActive && ytClientPlayer && typeof ytClientPlayer.pauseVideo === 'function') {
-                        ytClientPlayer.pauseVideo();
-                    }
-                    setPlayState(false);
-                });
-                navigator.mediaSession.setActionHandler('previoustrack', () => playPrevTrack());
-                navigator.mediaSession.setActionHandler('nexttrack', () => playNextTrack());
+        const handlePlay = () => {
+            if (youtubeAudioPlayer && youtubeAudioPlayer.src) {
+                youtubeAudioPlayer.play().catch(() => {});
+            } else if (isClientPlayerActive && ytClientPlayer && typeof ytClientPlayer.playVideo === 'function') {
+                ytClientPlayer.playVideo();
+            }
+            setPlayState(true);
+        };
+
+        const handlePause = () => {
+            if (youtubeAudioPlayer && !youtubeAudioPlayer.paused) {
+                youtubeAudioPlayer.pause();
+            } else if (isClientPlayerActive && ytClientPlayer && typeof ytClientPlayer.pauseVideo === 'function') {
+                ytClientPlayer.pauseVideo();
+            }
+            setPlayState(false);
+        };
+
+        // 1. Capacitor Native Media Session (For Android Lockscreen)
+        if (window.Capacitor && window.Capacitor.Plugins.MediaSession) {
+            try {
+                const MediaSession = window.Capacitor.Plugins.MediaSession;
+                await MediaSession.setMetadata(metadata);
+                MediaSession.setActionHandler({ action: 'play' }, handlePlay);
+                MediaSession.setActionHandler({ action: 'pause' }, handlePause);
+                MediaSession.setActionHandler({ action: 'previoustrack' }, playPrevTrack);
+                MediaSession.setActionHandler({ action: 'nexttrack' }, playNextTrack);
+            } catch (e) {
+                console.error("Capacitor MediaSession Error:", e);
+            }
+        }
+
+        // 2. Web Fallback (For Desktop / Standard Chrome PWA)
+        if ('mediaSession' in navigator) {
+            try {
+                navigator.mediaSession.metadata = new MediaMetadata(metadata);
+                navigator.mediaSession.setActionHandler('play', handlePlay);
+                navigator.mediaSession.setActionHandler('pause', handlePause);
+                navigator.mediaSession.setActionHandler('previoustrack', playPrevTrack);
+                navigator.mediaSession.setActionHandler('nexttrack', playNextTrack);
             } catch (e) {
             }
         }
@@ -885,10 +908,17 @@ document.addEventListener('DOMContentLoaded', () => {
             if (mBarPlayIcon) mBarPlayIcon.classList.remove('hidden');
             if (mBarPauseIcon) mBarPauseIcon.classList.add('hidden');
         }
+        updateMediaSessionPlaybackState(playing);
+    }
 
+    function updateMediaSessionPlaybackState(playing) {
+        const state = playing ? 'playing' : 'paused';
+        if (window.Capacitor && window.Capacitor.Plugins.MediaSession) {
+            window.Capacitor.Plugins.MediaSession.setPlaybackState({ playbackState: state }).catch(()=>{});
+        }
         if ('mediaSession' in navigator) {
             try {
-                navigator.mediaSession.playbackState = playing ? 'playing' : 'paused';
+                navigator.mediaSession.playbackState = state;
             } catch (e) {}
         }
     }
