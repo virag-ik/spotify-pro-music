@@ -109,7 +109,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (relData.results && relData.results.length > 0) {
                 const nextTrack = relData.results.find(r => r.id !== currentVideoId) || relData.results[0];
                 if (nextTrack) {
-                    const audioResp = await fetch(`/api/audio-url?id=${nextTrack.id}`);
+                    const titleParam = encodeURIComponent(nextTrack.title || '');
+                    const audioResp = await fetch(`/api/audio-url?id=${nextTrack.id}&title=${titleParam}`);
                     if (!audioResp.ok) return;
                     const audioData = await audioResp.json();
                     if (audioData.url) {
@@ -986,7 +987,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             searchStatusText.textContent = `Loading audio stream...`;
-            const resp = await fetch(`/api/audio-url?id=${videoId}`);
+            const titleParam = (currentPlayingTrack && currentPlayingTrack.title) ? encodeURIComponent(currentPlayingTrack.title) : '';
+            const resp = await fetch(`/api/audio-url?id=${videoId}&title=${titleParam}`);
             if (resp.ok) {
                 const data = await resp.json();
                 if (data.url) {

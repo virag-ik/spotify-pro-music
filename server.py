@@ -329,11 +329,27 @@ class SpotifyYouTubeHandler(http.server.SimpleHTTPRequestHandler):
         # Direct Audio URL Endpoint — returns a playable audio stream URL
         elif path == '/api/audio-url':
             video_id = query.get('id', [''])[0]
+            title = query.get('title', [''])[0]
             if not video_id:
                 self.send_json_response({'error': 'Missing video id'}, 400)
                 return
 
             audio_url = get_audio_stream_url(video_id)
+            if not audio_url and title:
+                # Automatic fallback: search for alternative audio / lyrical version
+                try:
+                    alt_results = search_youtube_innertube(f"{title} audio")
+                    for alt in alt_results[:4]:
+                        if alt['id'] != video_id:
+                            alt_url = get_audio_stream_url(alt['id'])
+                            if alt_url:
+                                audio_url = alt_url
+                                audio_stream_cache[video_id] = (audio_url, time.time())
+                                print(f"Resolved via alternative match '{alt['title']}' for {video_id}")
+                                break
+                except Exception as e:
+                    print(f"Alternative search resolution error: {e}")
+
             if audio_url:
                 self.send_json_response({'url': audio_url, 'id': video_id})
             else:
