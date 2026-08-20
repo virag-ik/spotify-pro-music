@@ -236,44 +236,6 @@ def get_audio_stream_url(video_id):
 
     return None
 
-def search_youtube_fallback(query):
-    """Secondary search fallback using public Piped/Invidious APIs."""
-    apis = [
-        f"https://pipedapi.kavin.rocks/search?q={urllib.parse.quote(query)}&filter=all",
-        f"https://api.piped.video/search?q={urllib.parse.quote(query)}&filter=all",
-        f"https://inv.tux.pizza/api/v1/search?q={urllib.parse.quote(query)}",
-        f"https://invidious.nerdvpn.de/api/v1/search?q={urllib.parse.quote(query)}"
-    ]
-    for api in apis:
-        try:
-            req = urllib.request.Request(api, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req, timeout=4, context=ssl_ctx) as resp:
-                data = json.loads(resp.read().decode('utf-8'))
-                items = data if isinstance(data, list) else data.get('items', [])
-                results = []
-                for item in items:
-                    v_id = item.get('id') or item.get('videoId')
-                    if not v_id and item.get('url'):
-                        v_id = item.get('url', '').split('=')[-1]
-                    if v_id:
-                        title = item.get('title', 'Unknown Track')
-                        uploader = item.get('uploaderName') or item.get('author') or 'YouTube Artist'
-                        dur = item.get('duration', 0)
-                        results.append({
-                            'id': v_id,
-                            'title': title,
-                            'uploader': uploader,
-                            'thumbnail': item.get('thumbnail') or f"https://i.ytimg.com/vi/{v_id}/hqdefault.jpg",
-                            'duration': dur,
-                            'durationStr': format_dur(dur),
-                            'youtubeUrl': f"https://www.youtube.com/watch?v={v_id}"
-                        })
-                if results:
-                    return results
-        except Exception:
-            continue
-    return []
-
 class SpotifyYouTubeHandler(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
         self.send_header('Access-Control-Allow-Origin', '*')
@@ -318,11 +280,8 @@ class SpotifyYouTubeHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_json_response({'results': direct_result})
                 return
 
-            # Execute tiered search
+            # Execute search directly via YouTube InnerTube
             results = search_youtube_innertube(search_query)
-            if not results:
-                results = search_youtube_fallback(search_query)
-
             self.send_json_response({'results': results})
             return
 

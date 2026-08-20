@@ -252,74 +252,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 300);
     }
 
-    // -------------------------------------------------------------
-    // 2. YouTube Client IFrame Player Initialization & Failproof Execution
-    // -------------------------------------------------------------
-    let ytClientPlayer = null;
-    let isClientPlayerActive = false;
-    let ytPlayerReady = false;
-    let pendingVideoId = null;
-
-    function initYTPlayer() {
-        if (ytClientPlayer || typeof YT === 'undefined' || !YT.Player) return;
-        try {
-            ytClientPlayer = new YT.Player('clientYtFrame', {
-                height: '100%',
-                width: '100%',
-                videoId: '',
-                playerVars: {
-                    'autoplay': 1,
-                    'controls': 0,
-                    'playsinline': 1,
-                    'rel': 0,
-                    'modestbranding': 1,
-                    'enablejsapi': 1
-                },
-                events: {
-                    'onReady': onPlayerReady,
-                    'onStateChange': onClientPlayerStateChange,
-                    'onError': onClientPlayerError
-                }
-            });
-        } catch (e) {
-            console.error("YT Player init error:", e);
-        }
-    }
-
-    function onPlayerReady() {
-        ytPlayerReady = true;
-        if (pendingVideoId) {
-            const vid = pendingVideoId;
-            pendingVideoId = null;
-            ytClientPlayer.loadVideoById(vid);
-            ytClientPlayer.playVideo();
-            setPlayState(true);
-        }
-    }
-
-    window.onYouTubeIframeAPIReady = function() {
-        initYTPlayer();
-    };
-
-    if (window.YT && window.YT.Player) {
-        initYTPlayer();
-    }
-
-    function onClientPlayerStateChange(event) {
-        if (event.data === YT.PlayerState.PLAYING) {
-            setPlayState(true);
-            searchStatusText.textContent = `Now Playing: ${currentPlayingTrack ? currentPlayingTrack.title : ''}`;
-        } else if (event.data === YT.PlayerState.PAUSED) {
-            setPlayState(false);
-        } else if (event.data === YT.PlayerState.ENDED) {
-            if (isLoop && currentPlayingTrack) {
-                playTrack(currentPlayingTrack);
-            } else {
-                playNextTrack();
-            }
-        }
-    }
-
     // Audio element playback mode flag
     let isAudioElementPlaying = false;
 
@@ -331,6 +263,7 @@ document.addEventListener('DOMContentLoaded', () => {
     youtubeAudioPlayer.addEventListener('pause', () => {
         if (isAudioElementPlaying) setPlayState(false);
     });
+
     youtubeAudioPlayer.addEventListener('ended', () => {
         if (isAudioElementPlaying) {
             if (isLoop && currentPlayingTrack) {
@@ -350,33 +283,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-
-    // Automatic Error Recovery on restricted/blocked video embedding (iframe fallback)
-    async function onClientPlayerError(event) {
-        console.warn("YouTube Player error code:", event.data);
-        if (event.data === 101 || event.data === 150 || event.data === 100 || event.data === 2) {
-            showToast("Embedding restricted. Auto-switching to audio stream...");
-            if (currentPlayingTrack) {
-                try {
-                    const fallbackQuery = `${currentPlayingTrack.uploader} ${currentPlayingTrack.title} audio`;
-                    const resp = await fetch(`/api/search?q=${encodeURIComponent(fallbackQuery)}`);
-                    const data = await resp.json();
-                    if (data.results && data.results.length > 0) {
-                        const altTrack = data.results.find(r => r.id !== currentPlayingTrack.id) || data.results[0];
-                        if (altTrack) {
-                            showToast(`Playing alternative version: ${altTrack.title}`);
-                            playViaClientYTPlayer(altTrack.id);
-                            return;
-                        }
-                    }
-                } catch (err) {
-                    console.error("Fallback search failed:", err);
-                }
-            }
-        }
-    }
-
-    // Scrubber update timer — handles Native ExoPlayer, audio element, and iframe player
+    // Scrubber update timer — handles Native ExoPlayer and HTML5 audio element
     setInterval(() => {
         let cur = 0, dur = 0;
 
@@ -386,11 +293,6 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (isAudioElementPlaying && youtubeAudioPlayer) {
             cur = youtubeAudioPlayer.currentTime || 0;
             dur = youtubeAudioPlayer.duration || 0;
-        } else if (isClientPlayerActive && ytClientPlayer && ytClientPlayer.getCurrentTime) {
-            try {
-                cur = ytClientPlayer.getCurrentTime() || 0;
-                dur = ytClientPlayer.getDuration() || 0;
-            } catch (e) {}
         }
 
         if (dur > 0 && !isNaN(dur)) {
@@ -901,19 +803,19 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         const handlePlay = () => {
-            if (youtubeAudioPlayer && youtubeAudioPlayer.src) {
+            if (NativePlayer.isAvailable()) {
+                NativePlayer.resume();
+            } else if (youtubeAudioPlayer && youtubeAudioPlayer.src) {
                 youtubeAudioPlayer.play().catch(() => {});
-            } else if (isClientPlayerActive && ytClientPlayer && typeof ytClientPlayer.playVideo === 'function') {
-                ytClientPlayer.playVideo();
             }
             setPlayState(true);
         };
 
         const handlePause = () => {
-            if (youtubeAudioPlayer && !youtubeAudioPlayer.paused) {
+            if (NativePlayer.isAvailable()) {
+                NativePlayer.pause();
+            } else if (youtubeAudioPlayer && !youtubeAudioPlayer.paused) {
                 youtubeAudioPlayer.pause();
-            } else if (isClientPlayerActive && ytClientPlayer && typeof ytClientPlayer.pauseVideo === 'function') {
-                ytClientPlayer.pauseVideo();
             }
             setPlayState(false);
         };
@@ -973,8 +875,6 @@ document.addEventListener('DOMContentLoaded', () => {
             playViaClientYTPlayer(track.id);
         } else {
             // Built-in Synthesizer Track
-            isClientPlayerActive = false;
-            if (ytClientPlayer && typeof ytClientPlayer.stopVideo === 'function') ytClientPlayer.stopVideo();
             playBuiltinSynthTrack();
         }
     }
@@ -1076,17 +976,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Handle YT iframe player
-        if (isClientPlayerActive && ytClientPlayer) {
-            if (isPlaying) {
-                if (typeof ytClientPlayer.pauseVideo === 'function') ytClientPlayer.pauseVideo();
-                setPlayState(false);
-            } else {
-                if (typeof ytClientPlayer.playVideo === 'function') ytClientPlayer.playVideo();
-                setPlayState(true);
-            }
-            return;
-        }
 
         if (currentPlayingTrack && !currentPlayingTrack.isYouTube) {
             if (isPlaying) {
@@ -1232,9 +1121,6 @@ document.addEventListener('DOMContentLoaded', () => {
             NativePlayer.seekTo(pct * nativeTrackDuration * 1000);
         } else if (isAudioElementPlaying && youtubeAudioPlayer && youtubeAudioPlayer.duration) {
             youtubeAudioPlayer.currentTime = pct * youtubeAudioPlayer.duration;
-        } else if (isClientPlayerActive && ytClientPlayer && ytClientPlayer.getDuration) {
-            const dur = ytClientPlayer.getDuration();
-            ytClientPlayer.seekTo(pct * dur, true);
         }
     }
 
@@ -1243,9 +1129,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     spotifyVolumeSlider.addEventListener('input', (e) => {
         const val = parseInt(e.target.value);
-        if (isClientPlayerActive && ytClientPlayer && ytClientPlayer.setVolume) {
-            ytClientPlayer.setVolume(val);
-        }
         youtubeAudioPlayer.volume = val / 100;
         if (masterGain) masterGain.gain.value = val / 100;
     });

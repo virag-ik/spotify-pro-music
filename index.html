@@ -12,7 +12,6 @@
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#121212">
     <link rel="apple-touch-icon" href="icon.jpg">
-    <script src="https://www.youtube.com/iframe_api"></script>
 </head>
 <body>
     <div class="spotify-layout">
@@ -334,10 +333,7 @@
         </div>
     </div>
 
-    <!-- YouTube Player Container: MUST be inside viewport for Chrome Desktop to keep iframe rendering active -->
-    <div id="ytPlayerContainer" style="position: fixed; bottom: 0; right: 0; width: 200px; height: 200px; opacity: 0.01; pointer-events: none; z-index: -1; overflow: hidden;">
-        <div id="clientYtFrame"></div>
-    </div>
+
 
     <!-- Spotify Player Bar (Desktop & Mobile Mini Player) -->
     <footer class="spotify-player-bar" id="spotifyPlayerBar">
