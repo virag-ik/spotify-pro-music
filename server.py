@@ -9,6 +9,12 @@ import time
 import ssl
 import re
 
+try:
+    import yt_dlp
+except ImportError:
+    yt_dlp = None
+
+audio_stream_cache = {}
 
 PORT = int(os.environ.get('PORT', 8080))
 ssl_ctx = ssl.create_default_context()
@@ -163,29 +169,65 @@ def get_related_videos(video_id):
     return results
 
 def get_audio_stream_url(video_id):
-    """Extract a direct audio stream URL for a YouTube video via Cobalt API."""
-    api_url = "https://api.cobalt.tools/api/json"
-    headers = {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-    }
-    
-    payload = json.dumps({
-        "url": f"https://www.youtube.com/watch?v={video_id}",
-        "isAudioOnly": True
-    }).encode('utf-8')
+    """Extract a direct audio stream URL for a YouTube video using yt-dlp with InnerTube fallback."""
+    # 1. Check in-memory cache (valid for 4 hours)
+    now = time.time()
+    if video_id in audio_stream_cache:
+        cached_url, cached_time = audio_stream_cache[video_id]
+        if now - cached_time < 14400:
+            return cached_url
 
+    # 2. Try yt-dlp (fast, reliable, unthrottled audio stream extractor)
+    if yt_dlp is not None:
+        try:
+            ydl_opts = {
+                'format': 'bestaudio/best',
+                'quiet': True,
+                'no_warnings': True,
+                'extract_flat': False,
+                'socket_timeout': 10
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
+                audio_url = info.get('url')
+                if audio_url:
+                    print(f"Direct audio URL resolved via yt-dlp for {video_id}")
+                    audio_stream_cache[video_id] = (audio_url, now)
+                    return audio_url
+        except Exception as e:
+            print(f"yt-dlp extraction failed for {video_id}: {e}")
+
+    # 3. Fallback: InnerTube ANDROID_VR client
     try:
-        req = urllib.request.Request(api_url, data=payload, headers=headers, method='POST')
-        with urllib.request.urlopen(req, timeout=10, context=ssl_ctx) as resp:
-            result = json.loads(resp.read().decode('utf-8'))
-            audio_url = result.get('url')
-            if audio_url:
-                print(f"Audio URL resolved via Cobalt API for {video_id}")
+        url = "https://www.youtube.com/youtubei/v1/player?prettyPrint=false"
+        body = {
+            "context": {
+                "client": {
+                    "clientName": "ANDROID_VR",
+                    "clientVersion": "1.56.21",
+                    "hl": "en",
+                    "gl": "US"
+                }
+            },
+            "videoId": video_id
+        }
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+        }
+        req = urllib.request.Request(url, data=json.dumps(body).encode('utf-8'), headers=headers, method='POST')
+        with urllib.request.urlopen(req, timeout=8, context=ssl_ctx) as resp:
+            data = json.loads(resp.read().decode('utf-8', 'replace'))
+            formats = data.get("streamingData", {}).get("adaptiveFormats", [])
+            audio_formats = [f for f in formats if 'audio' in f.get('mimeType', '') and f.get('url')]
+            if audio_formats:
+                audio_formats.sort(key=lambda x: x.get('bitrate', 0), reverse=True)
+                audio_url = audio_formats[0]['url']
+                print(f"Direct audio URL resolved via InnerTube for {video_id}")
+                audio_stream_cache[video_id] = (audio_url, now)
                 return audio_url
     except Exception as e:
-        print(f"Cobalt API extraction failed: {e}")
+        print(f"InnerTube direct stream failed for {video_id}: {e}")
 
     return None
 
