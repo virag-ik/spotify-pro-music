@@ -100,21 +100,25 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // Pre-queue next song into native Android ExoPlayer memory buffer for gapless screen-off auto-play
-    async function prefetchNextTrackForNativeQueue(currentVideoId) {
+    async function prefetchNextTrackForNativeQueue(currentTrackId) {
         if (!NativePlayer.isAvailable()) return;
         try {
-            const relResp = await fetch(`/api/related?id=${currentVideoId}`);
+            const relResp = await fetch(`/api/related?id=${currentTrackId}`);
             if (!relResp.ok) return;
             const relData = await relResp.json();
             if (relData.results && relData.results.length > 0) {
-                const nextTrack = relData.results.find(r => r.id !== currentVideoId) || relData.results[0];
+                const nextTrack = relData.results.find(r => r.id !== currentTrackId) || relData.results[0];
                 if (nextTrack) {
-                    const titleParam = encodeURIComponent(nextTrack.title || '');
-                    const audioResp = await fetch(`/api/audio-url?id=${nextTrack.id}&title=${titleParam}`);
-                    if (!audioResp.ok) return;
-                    const audioData = await audioResp.json();
-                    if (audioData.url) {
-                        await NativePlayer.queueNext(nextTrack, audioData.url);
+                    let streamUrl = nextTrack.url;
+                    if (!streamUrl) {
+                        const audioResp = await fetch(`/api/audio-url?id=${nextTrack.id}`);
+                        if (audioResp.ok) {
+                            const audioData = await audioResp.json();
+                            streamUrl = audioData.url;
+                        }
+                    }
+                    if (streamUrl) {
+                        await NativePlayer.queueNext(nextTrack, streamUrl);
                         console.log(`[ExoPlayer Native Queue] Successfully pre-queued: ${nextTrack.title}`);
                     }
                 }
@@ -870,57 +874,62 @@ document.addEventListener('DOMContentLoaded', () => {
 
         updateLyricsDisplay(track);
 
-        if (track.isYouTube) {
+        if (track.isYouTube || track.id) {
             searchStatusText.textContent = `Now Playing: "${track.title}"`;
-            playViaClientYTPlayer(track.id);
+            playStreamTrack(track.id, track.url);
         } else {
             // Built-in Synthesizer Track
             playBuiltinSynthTrack();
         }
     }
 
-    async function playViaClientYTPlayer(videoId) {
+    async function playStreamTrack(trackId, directUrl) {
         // Stop any previous audio element playback
         youtubeAudioPlayer.pause();
         youtubeAudioPlayer.removeAttribute('src');
         isAudioElementPlaying = false;
 
-        try {
-            searchStatusText.textContent = `Loading audio stream...`;
-            const titleParam = (currentPlayingTrack && currentPlayingTrack.title) ? encodeURIComponent(currentPlayingTrack.title) : '';
-            const resp = await fetch(`/api/audio-url?id=${videoId}&title=${titleParam}`);
-            if (resp.ok) {
-                const data = await resp.json();
-                if (data.url) {
-                    // Plan A: Route to Native ExoPlayer Engine (Spotify-Level background audio)
-                    if (NativePlayer.isAvailable()) {
-                        const played = await NativePlayer.play(currentPlayingTrack, data.url);
-                        if (played) {
-                            isAudioElementPlaying = true;
-                            setPlayState(true);
-                            searchStatusText.textContent = `Now Playing: "${currentPlayingTrack ? currentPlayingTrack.title : ''}"`;
-                            prefetchNextTrackForNativeQueue(videoId);
-                            return;
-                        }
-                    }
+        let audioUrl = directUrl || (currentPlayingTrack ? currentPlayingTrack.url : null);
 
-                    // Web browser HTML5 Audio fallback
-                    youtubeAudioPlayer.src = data.url;
-                    youtubeAudioPlayer.loop = false;
-                    await youtubeAudioPlayer.play();
+        if (!audioUrl) {
+            try {
+                searchStatusText.textContent = `Loading 320kbps audio stream...`;
+                const resp = await fetch(`/api/audio-url?id=${trackId}`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    audioUrl = data.url;
+                }
+            } catch (e) {
+                console.error("Audio stream load error:", e);
+            }
+        }
+
+        if (audioUrl) {
+            // Plan A: Route to Native ExoPlayer Engine (Spotify-Level background audio)
+            if (NativePlayer.isAvailable()) {
+                const played = await NativePlayer.play(currentPlayingTrack, audioUrl);
+                if (played) {
                     isAudioElementPlaying = true;
                     setPlayState(true);
                     searchStatusText.textContent = `Now Playing: "${currentPlayingTrack ? currentPlayingTrack.title : ''}"`;
+                    prefetchNextTrackForNativeQueue(trackId);
                     return;
                 }
             }
-            showToast("Direct audio stream unavailable. Trying next song...");
-            setTimeout(playNextTrack, 1500);
-        } catch (e) {
-            console.error("Audio stream load error:", e);
-            showToast("Network error loading track.");
-            searchStatusText.textContent = "Playback error";
+
+            // Web browser HTML5 Audio fallback
+            youtubeAudioPlayer.src = audioUrl;
+            youtubeAudioPlayer.loop = false;
+            await youtubeAudioPlayer.play();
+            isAudioElementPlaying = true;
+            setPlayState(true);
+            searchStatusText.textContent = `Now Playing: "${currentPlayingTrack ? currentPlayingTrack.title : ''}"`;
+            prefetchNextTrackForNativeQueue(trackId);
+            return;
         }
+
+        showToast("Audio stream unavailable. Trying next song...");
+        setTimeout(playNextTrack, 1500);
     }
 
     function setPlayState(playing) {

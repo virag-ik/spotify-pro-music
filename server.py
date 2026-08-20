@@ -8,16 +8,29 @@ import sys
 import time
 import ssl
 import re
+import base64
 
 try:
-    import yt_dlp
+    from pyDes import des, ECB, PAD_PKCS5
 except ImportError:
-    yt_dlp = None
-
-audio_stream_cache = {}
+    des = None
 
 PORT = int(os.environ.get('PORT', 8080))
 ssl_ctx = ssl.create_default_context()
+
+audio_stream_cache = {}
+
+def decrypt_saavn_url(encrypted_url):
+    if not encrypted_url:
+        return None
+    try:
+        if des is not None:
+            cipher = des(b"38346591", ECB, b"\0\0\0\0\0\0\0\0", pad=None, padmode=PAD_PKCS5)
+            dec = cipher.decrypt(base64.b64decode(encrypted_url.strip())).decode('utf-8')
+            return dec.replace("_96.mp4", "_320.mp4").replace("_160.mp4", "_320.mp4")
+    except Exception as e:
+        print(f"DES decryption error: {e}")
+    return None
 
 def format_dur(seconds):
     if not seconds:
@@ -26,217 +39,133 @@ def format_dur(seconds):
     s = int(seconds) % 60
     return f"{m}:{s:02d}"
 
-def search_youtube_innertube(query):
-    """Primary high-speed search using YouTube InnerTube API (works on cloud hosts like Render without bot blocks)."""
-    url = "https://www.youtube.com/youtubei/v1/search?prettyPrint=false"
-    body = {
-        "context": {
-            "client": {
-                "clientName": "WEB",
-                "clientVersion": "2.20260101.00.00",
-                "hl": "en",
-                "gl": "US"
-            }
-        },
-        "query": query,
-        "params": "EgIQAQ=="  # Filter for videos
-    }
-    headers = {
-        "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Accept-Language": "en-US,en;q=0.9"
-    }
+def search_studio_music(query):
+    """Search studio-quality tracks from the open JioSaavn catalog with 320kbps direct streams."""
+    url = f"https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&cc=in&p=1&n=20&q={urllib.parse.quote(query)}"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     results = []
     try:
-        req = urllib.request.Request(url, data=json.dumps(body).encode('utf-8'), headers=headers, method='POST')
+        req = urllib.request.Request(url, headers=headers)
         with urllib.request.urlopen(req, timeout=6, context=ssl_ctx) as resp:
             data = json.loads(resp.read().decode('utf-8', 'replace'))
-            sections = (
-                data.get("contents", {})
-                .get("twoColumnSearchResultsRenderer", {})
-                .get("primaryContents", {})
-                .get("sectionListRenderer", {})
-                .get("contents", [])
-            )
-            for section in sections:
-                items = (section.get("itemSectionRenderer") or {}).get("contents") or []
-                for item in items:
-                    vr = item.get("videoRenderer")
-                    if not vr:
-                        continue
-                    v_id = vr.get("videoId")
-                    if not v_id:
-                        continue
-                    title_runs = (vr.get("title") or {}).get("runs") or []
-                    title = "".join(r.get("text", "") for r in title_runs) or "Unknown Track"
-                    owner_runs = (vr.get("ownerText") or vr.get("longBylineText") or {}).get("runs") or []
-                    uploader = "".join(r.get("text", "") for r in owner_runs) or "YouTube Artist"
-                    dur_str = ((vr.get("lengthText") or {}).get("simpleText")) or ""
+            raw_results = data.get('results', [])
+            
+            pids_to_fetch = [item.get('id') for item in raw_results if item.get('id')]
+            details_map = {}
+            if pids_to_fetch:
+                try:
+                    det_url = f"https://www.jiosaavn.com/api.php?__call=song.getDetails&pids={','.join(pids_to_fetch[:20])}&_format=json&_marker=0&cc=in"
+                    det_req = urllib.request.Request(det_url, headers=headers)
+                    with urllib.request.urlopen(det_req, timeout=6, context=ssl_ctx) as det_resp:
+                        details_map = json.loads(det_resp.read().decode('utf-8', 'replace'))
+                except Exception as e:
+                    print(f"Batch details fetch error: {e}")
 
-                    dur_secs = 0
-                    if dur_str:
-                        parts = dur_str.split(':')
-                        try:
-                            if len(parts) == 2:
-                                dur_secs = int(parts[0]) * 60 + int(parts[1])
-                            elif len(parts) == 3:
-                                dur_secs = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
-                        except ValueError:
-                            dur_secs = 0
-
-                    results.append({
-                        'id': v_id,
-                        'title': title,
-                        'uploader': uploader,
-                        'thumbnail': f"https://i.ytimg.com/vi/{v_id}/hqdefault.jpg",
-                        'duration': dur_secs,
-                        'durationStr': dur_str or format_dur(dur_secs),
-                        'youtubeUrl': f"https://www.youtube.com/watch?v={v_id}"
-                    })
-    except Exception as e:
-        print(f"InnerTube search error: {e}")
-    return results
-
-def get_related_videos(video_id):
-    """Fetch related/recommended videos for a given YouTube video using InnerTube."""
-    url = "https://www.youtube.com/youtubei/v1/next?prettyPrint=false"
-    body = {
-        "context": {
-            "client": {
-                "clientName": "WEB",
-                "clientVersion": "2.20260101.00.00",
-                "hl": "en",
-                "gl": "US"
-            }
-        },
-        "videoId": video_id
-    }
-    headers = {
-        "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-    }
-    results = []
-    try:
-        req = urllib.request.Request(url, data=json.dumps(body).encode('utf-8'), headers=headers, method='POST')
-        with urllib.request.urlopen(req, timeout=8, context=ssl_ctx) as resp:
-            data = json.loads(resp.read().decode('utf-8', 'replace'))
-            panels = (
-                data.get("contents", {})
-                .get("twoColumnWatchNextResults", {})
-                .get("secondaryResults", {})
-                .get("secondaryResults", {})
-                .get("results", [])
-            )
-            for panel in panels:
-                vr = panel.get("compactVideoRenderer")
-                if not vr:
+            for item in raw_results:
+                s_id = item.get('id')
+                if not s_id:
                     continue
-                v_id = vr.get("videoId")
-                if not v_id or v_id == video_id:
-                    continue
-                title_runs = (vr.get("title") or {}).get("simpleText") or ""
-                if not title_runs:
-                    t_runs = (vr.get("title") or {}).get("runs") or []
-                    title_runs = "".join(r.get("text", "") for r in t_runs)
-                owner_runs = (vr.get("longBylineText") or vr.get("shortBylineText") or {}).get("runs") or []
-                uploader = "".join(r.get("text", "") for r in owner_runs) or "YouTube Artist"
-                dur_str = ((vr.get("lengthText") or {}).get("simpleText")) or ""
-
-                dur_secs = 0
-                if dur_str:
-                    parts = dur_str.split(':')
-                    try:
-                        if len(parts) == 2:
-                            dur_secs = int(parts[0]) * 60 + int(parts[1])
-                        elif len(parts) == 3:
-                            dur_secs = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
-                    except ValueError:
-                        dur_secs = 0
+                info = details_map.get(s_id, item)
+                
+                title = info.get('song') or item.get('song') or "Unknown Track"
+                artist = info.get('primary_artists') or info.get('singers') or item.get('primary_artists') or "Studio Artist"
+                album = info.get('album') or item.get('album') or ""
+                dur_secs = int(info.get('duration') or item.get('duration') or 0)
+                
+                img = info.get('image') or item.get('image') or ""
+                if img:
+                    img = img.replace("150x150", "500x500").replace("50x50", "500x500")
+                else:
+                    img = "synthwave_album_cover.jpg"
+                
+                enc_url = info.get('encrypted_media_url') or item.get('encrypted_media_url')
+                stream_url = decrypt_saavn_url(enc_url)
+                if stream_url:
+                    audio_stream_cache[s_id] = (stream_url, time.time())
 
                 results.append({
-                    'id': v_id,
-                    'title': title_runs or "Unknown Track",
-                    'uploader': uploader,
-                    'thumbnail': f"https://i.ytimg.com/vi/{v_id}/hqdefault.jpg",
+                    'id': s_id,
+                    'title': title,
+                    'uploader': artist,
+                    'album': album,
+                    'thumbnail': img,
                     'duration': dur_secs,
-                    'durationStr': dur_str or format_dur(dur_secs),
-                    'youtubeUrl': f"https://www.youtube.com/watch?v={v_id}"
+                    'durationStr': format_dur(dur_secs),
+                    'url': stream_url or ""
                 })
-                if len(results) >= 15:
-                    break
     except Exception as e:
-        print(f"InnerTube related videos error: {e}")
+        print(f"Studio search error: {e}")
     return results
 
-def get_audio_stream_url(video_id):
-    """Extract a direct audio stream URL for a YouTube video using yt-dlp with InnerTube fallback."""
-    # 1. Check in-memory cache (valid for 4 hours)
+def get_studio_stream_url(song_id):
+    """Retrieve 320kbps direct audio stream URL for a given song ID."""
     now = time.time()
-    if video_id in audio_stream_cache:
-        cached_url, cached_time = audio_stream_cache[video_id]
+    if song_id in audio_stream_cache:
+        cached_url, cached_time = audio_stream_cache[song_id]
         if now - cached_time < 14400:
             return cached_url
 
-    # 2. Try yt-dlp (fast, reliable, unthrottled audio stream extractor)
-    if yt_dlp is not None:
-        try:
-            ydl_opts = {
-                'format': 'bestaudio/best',
-                'quiet': True,
-                'no_warnings': True,
-                'extract_flat': False,
-                'socket_timeout': 10,
-                'extractor_args': {
-                    'youtube': {
-                        'player_client': ['android_creator', 'tv_embedded', 'android_embedded']
-                    }
-                }
-            }
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
-                audio_url = info.get('url')
-                if audio_url:
-                    print(f"Direct audio URL resolved via yt-dlp for {video_id}")
-                    audio_stream_cache[video_id] = (audio_url, now)
-                    return audio_url
-        except Exception as e:
-            print(f"yt-dlp extraction failed for {video_id}: {e}")
-
-    # 3. Fallback: InnerTube ANDROID_VR client
+    url = f"https://www.jiosaavn.com/api.php?__call=song.getDetails&pids={song_id}&_format=json&_marker=0&cc=in"
+    headers = {"User-Agent": "Mozilla/5.0"}
     try:
-        url = "https://www.youtube.com/youtubei/v1/player?prettyPrint=false"
-        body = {
-            "context": {
-                "client": {
-                    "clientName": "ANDROID_VR",
-                    "clientVersion": "1.56.21",
-                    "hl": "en",
-                    "gl": "US"
-                }
-            },
-            "videoId": video_id
-        }
-        headers = {
-            "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
-        }
-        req = urllib.request.Request(url, data=json.dumps(body).encode('utf-8'), headers=headers, method='POST')
-        with urllib.request.urlopen(req, timeout=8, context=ssl_ctx) as resp:
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=5, context=ssl_ctx) as resp:
             data = json.loads(resp.read().decode('utf-8', 'replace'))
-            formats = data.get("streamingData", {}).get("adaptiveFormats", [])
-            audio_formats = [f for f in formats if 'audio' in f.get('mimeType', '') and f.get('url')]
-            if audio_formats:
-                audio_formats.sort(key=lambda x: x.get('bitrate', 0), reverse=True)
-                audio_url = audio_formats[0]['url']
-                print(f"Direct audio URL resolved via InnerTube for {video_id}")
-                audio_stream_cache[video_id] = (audio_url, now)
-                return audio_url
+            info = data.get(song_id, {})
+            enc_url = info.get('encrypted_media_url')
+            if enc_url:
+                stream_url = decrypt_saavn_url(enc_url)
+                if stream_url:
+                    audio_stream_cache[song_id] = (stream_url, now)
+                    return stream_url
     except Exception as e:
-        print(f"InnerTube direct stream failed for {video_id}: {e}")
-
+        print(f"Stream resolution error for {song_id}: {e}")
     return None
 
-class SpotifyYouTubeHandler(http.server.SimpleHTTPRequestHandler):
+def get_studio_recommendations(song_id):
+    """Fetch Song Radio recommendations with direct 320kbps MP3 links."""
+    url = f"https://www.jiosaavn.com/api.php?__call=reco.getreco&pid={song_id}&_format=json&_marker=0&cc=in"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    results = []
+    try:
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=5, context=ssl_ctx) as resp:
+            data = json.loads(resp.read().decode('utf-8', 'replace'))
+            items = data.get(song_id) if isinstance(data, dict) else data
+            if isinstance(items, dict):
+                items = list(items.values())
+            if isinstance(items, list):
+                for item in items:
+                    s_id = item.get('id')
+                    if not s_id or s_id == song_id:
+                        continue
+                    title = item.get('song') or "Unknown Track"
+                    artist = item.get('primary_artists') or item.get('singers') or "Studio Artist"
+                    album = item.get('album') or ""
+                    dur_secs = int(item.get('duration') or 0)
+                    img = (item.get('image') or "").replace("150x150", "500x500").replace("50x50", "500x500")
+                    enc_url = item.get('encrypted_media_url')
+                    stream_url = decrypt_saavn_url(enc_url)
+                    if stream_url:
+                        audio_stream_cache[s_id] = (stream_url, time.time())
+
+                    results.append({
+                        'id': s_id,
+                        'title': title,
+                        'uploader': artist,
+                        'album': album,
+                        'thumbnail': img or "synthwave_album_cover.jpg",
+                        'duration': dur_secs,
+                        'durationStr': format_dur(dur_secs),
+                        'url': stream_url or ""
+                    })
+                    if len(results) >= 15:
+                        break
+    except Exception as e:
+        print(f"Recommendations error for {song_id}: {e}")
+    return results
+
+class SpotifyStudioHandler(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, OPTIONS, POST')
@@ -264,66 +193,33 @@ class SpotifyYouTubeHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_json_response({'error': 'Missing query parameter q'}, 400)
                 return
 
-            # Check if query is a direct YouTube URL
-            yt_url_match = re.search(r'(?:v=|\/|youtu\.be\/)([a-zA-Z0-9_-]{11})', search_query)
-            if yt_url_match:
-                v_id = yt_url_match.group(1)
-                direct_result = [{
-                    'id': v_id,
-                    'title': f'YouTube Video ({v_id})',
-                    'uploader': 'Direct YouTube Link',
-                    'thumbnail': f'https://i.ytimg.com/vi/{v_id}/hqdefault.jpg',
-                    'duration': 0,
-                    'durationStr': '3:30',
-                    'youtubeUrl': f'https://www.youtube.com/watch?v={v_id}'
-                }]
-                self.send_json_response({'results': direct_result})
-                return
-
-            # Execute search directly via YouTube InnerTube
-            results = search_youtube_innertube(search_query)
+            results = search_studio_music(search_query)
             self.send_json_response({'results': results})
             return
 
-        # Direct Audio URL Endpoint — returns a playable audio stream URL
+        # Direct Audio URL Endpoint — returns 320kbps MP3 audio stream URL
         elif path == '/api/audio-url':
-            video_id = query.get('id', [''])[0]
-            title = query.get('title', [''])[0]
-            if not video_id:
-                self.send_json_response({'error': 'Missing video id'}, 400)
+            song_id = query.get('id', [''])[0]
+            if not song_id:
+                self.send_json_response({'error': 'Missing song id'}, 400)
                 return
 
-            audio_url = get_audio_stream_url(video_id)
-            if not audio_url and title:
-                # Automatic fallback: search for alternative audio / lyrical version
-                try:
-                    alt_results = search_youtube_innertube(f"{title} audio")
-                    for alt in alt_results[:4]:
-                        if alt['id'] != video_id:
-                            alt_url = get_audio_stream_url(alt['id'])
-                            if alt_url:
-                                audio_url = alt_url
-                                audio_stream_cache[video_id] = (audio_url, time.time())
-                                print(f"Resolved via alternative match '{alt['title']}' for {video_id}")
-                                break
-                except Exception as e:
-                    print(f"Alternative search resolution error: {e}")
-
+            audio_url = get_studio_stream_url(song_id)
             if audio_url:
-                self.send_json_response({'url': audio_url, 'id': video_id})
+                self.send_json_response({'url': audio_url, 'id': song_id})
             else:
-                self.send_json_response({'error': 'Could not resolve audio stream', 'id': video_id}, 404)
+                self.send_json_response({'error': 'Could not resolve audio stream', 'id': song_id}, 404)
             return
 
-        # Related Videos Endpoint — returns recommended songs for auto-play
+        # Related Videos / Song Radio Endpoint — returns recommended songs for auto-play
         elif path == '/api/related':
-            video_id = query.get('id', [''])[0]
-            if not video_id:
-                self.send_json_response({'error': 'Missing video id'}, 400)
+            song_id = query.get('id', [''])[0]
+            if not song_id:
+                self.send_json_response({'error': 'Missing song id'}, 400)
                 return
 
-            results = get_related_videos(video_id)
-            self.send_json_response({'results': results, 'id': video_id})
+            results = get_studio_recommendations(song_id)
+            self.send_json_response({'results': results, 'id': song_id})
             return
 
         super().do_GET()
@@ -339,8 +235,8 @@ class SpotifyYouTubeHandler(http.server.SimpleHTTPRequestHandler):
 if __name__ == '__main__':
     web_dir = os.path.dirname(os.path.abspath(__file__))
     os.chdir(web_dir)
-    print(f"Spotify PRO Music Server running on port {PORT}")
-    with socketserver.TCPServer(("", PORT), SpotifyYouTubeHandler) as httpd:
+    print(f"Spotify PRO Studio Music Server running on port {PORT}")
+    with socketserver.TCPServer(("", PORT), SpotifyStudioHandler) as httpd:
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:
