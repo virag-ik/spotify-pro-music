@@ -11,6 +11,7 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        registerPlugin(InfiStreamAudioPlugin.class);
         super.onCreate(savedInstanceState);
         
         try {
@@ -33,7 +34,6 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onPause() {
         super.onPause();
-        // Prevent Android WebView from pausing HTML5 audio / JavaScript timers in background
         WebView webView = getBridge().getWebView();
         if (webView != null) {
             webView.onResume();
@@ -43,7 +43,6 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onStop() {
         super.onStop();
-        // Prevent background audio freeze on screen lock / home exit
         WebView webView = getBridge().getWebView();
         if (webView != null) {
             webView.onResume();

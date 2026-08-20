@@ -26,9 +26,138 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const youtubeAudioPlayer = document.getElementById('youtubeAudioPlayer');
 
-    // ==========================================
-    // [MODULE: 2. AUDIO] Web Audio API & Synth
-    // ==========================================
+    // -------------------------------------------------------------
+    // Native ExoPlayer Bridge (Spotify-Level Background Audio Engine)
+    // -------------------------------------------------------------
+    let isNativeExoPlayerActive = false;
+    let nativeTrackDuration = 0;
+    let nativeTrackPosition = 0;
+
+    const NativePlayer = {
+        isAvailable: () => {
+            return typeof window !== 'undefined' && 
+                   !!(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.InfiStreamAudio);
+        },
+        getPlugin: () => {
+            return (window.Capacitor && window.Capacitor.Plugins) ? window.Capacitor.Plugins.InfiStreamAudio : null;
+        },
+        play: async (track, streamUrl) => {
+            if (!NativePlayer.isAvailable()) return false;
+            try {
+                await NativePlayer.getPlugin().play({
+                    streamUrl: streamUrl,
+                    title: (track && track.title) ? track.title : 'Unknown Track',
+                    artist: (track && track.uploader) ? track.uploader : 'InfiStream Artist',
+                    album: 'InfiStream Music',
+                    artworkUrl: (track && track.thumbnail) ? track.thumbnail : '',
+                    mediaId: (track && track.id) ? track.id : ''
+                });
+                isNativeExoPlayerActive = true;
+                return true;
+            } catch (e) {
+                console.error("Native ExoPlayer play error:", e);
+                return false;
+            }
+        },
+        queueNext: async (track, streamUrl) => {
+            if (!NativePlayer.isAvailable()) return false;
+            try {
+                await NativePlayer.getPlugin().queueNext({
+                    streamUrl: streamUrl,
+                    title: (track && track.title) ? track.title : 'Next Track',
+                    artist: (track && track.uploader) ? track.uploader : 'InfiStream Artist',
+                    album: 'InfiStream Music',
+                    artworkUrl: (track && track.thumbnail) ? track.thumbnail : '',
+                    mediaId: (track && track.id) ? track.id : ''
+                });
+                return true;
+            } catch (e) {
+                console.error("Native ExoPlayer queue error:", e);
+                return false;
+            }
+        },
+        pause: async () => {
+            if (!NativePlayer.isAvailable()) return false;
+            try {
+                await NativePlayer.getPlugin().pause();
+                return true;
+            } catch (e) { return false; }
+        },
+        resume: async () => {
+            if (!NativePlayer.isAvailable()) return false;
+            try {
+                await NativePlayer.getPlugin().resume();
+                return true;
+            } catch (e) { return false; }
+        },
+        seekTo: async (positionMs) => {
+            if (!NativePlayer.isAvailable()) return false;
+            try {
+                await NativePlayer.getPlugin().seekTo({ positionMs: Math.floor(positionMs) });
+                return true;
+            } catch (e) { return false; }
+        }
+    };
+
+    // Pre-queue next song into native Android ExoPlayer memory buffer for gapless screen-off auto-play
+    async function prefetchNextTrackForNativeQueue(currentVideoId) {
+        if (!NativePlayer.isAvailable()) return;
+        try {
+            const relResp = await fetch(`/api/related?id=${currentVideoId}`);
+            if (!relResp.ok) return;
+            const relData = await relResp.json();
+            if (relData.results && relData.results.length > 0) {
+                const nextTrack = relData.results.find(r => r.id !== currentVideoId) || relData.results[0];
+                if (nextTrack) {
+                    const audioResp = await fetch(`/api/audio-url?id=${nextTrack.id}`);
+                    if (!audioResp.ok) return;
+                    const audioData = await audioResp.json();
+                    if (audioData.url) {
+                        await NativePlayer.queueNext(nextTrack, audioData.url);
+                        console.log(`[ExoPlayer Native Queue] Successfully pre-queued: ${nextTrack.title}`);
+                    }
+                }
+            }
+        } catch (e) {
+            console.error("Pre-queue fetch failed:", e);
+        }
+    }
+
+    // Initialize Native ExoPlayer event listeners
+    function initNativePlayerListeners() {
+        if (!NativePlayer.isAvailable()) return;
+        const plugin = NativePlayer.getPlugin();
+        if (!plugin) return;
+
+        plugin.addListener('playbackStateChanged', (data) => {
+            setPlayState(data.isPlaying);
+        });
+
+        plugin.addListener('positionUpdated', (data) => {
+            if (data.duration && data.duration > 0) {
+                nativeTrackPosition = data.position / 1000;
+                nativeTrackDuration = data.duration / 1000;
+            }
+        });
+
+        plugin.addListener('trackChanged', (data) => {
+            if (data.mediaId && (!currentPlayingTrack || currentPlayingTrack.id !== data.mediaId)) {
+                const nextTrack = currentTrackList.find(t => t.id === data.mediaId) || {
+                    id: data.mediaId,
+                    title: data.title || 'Now Playing',
+                    uploader: data.artist || 'InfiStream',
+                    thumbnail: `https://i.ytimg.com/vi/${data.mediaId}/hqdefault.jpg`,
+                    isYouTube: true
+                };
+                currentPlayingTrack = nextTrack;
+                updatePlayingUI(nextTrack);
+                prefetchNextTrackForNativeQueue(data.mediaId);
+            }
+        });
+    }
+
+    // Call listener setup on ready
+    setTimeout(initNativePlayerListeners, 1000);
     function initAudioEngine() {
         if (!audioCtx) {
             try {
@@ -247,11 +376,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Scrubber update timer — handles both audio element and iframe player
+    // Scrubber update timer — handles Native ExoPlayer, audio element, and iframe player
     setInterval(() => {
         let cur = 0, dur = 0;
 
-        if (isAudioElementPlaying && youtubeAudioPlayer) {
+        if (isNativeExoPlayerActive && nativeTrackDuration > 0) {
+            cur = nativeTrackPosition;
+            dur = nativeTrackDuration;
+        } else if (isAudioElementPlaying && youtubeAudioPlayer) {
             cur = youtubeAudioPlayer.currentTime || 0;
             dur = youtubeAudioPlayer.duration || 0;
         } else if (isClientPlayerActive && ytClientPlayer && ytClientPlayer.getCurrentTime) {
@@ -854,13 +986,27 @@ document.addEventListener('DOMContentLoaded', () => {
         isAudioElementPlaying = false;
         isClientPlayerActive = false;
 
-        // Method 1: Try direct audio stream via server (works on desktop + background play)
+        // Method 1: Try direct audio stream via server
         try {
             searchStatusText.textContent = `Loading audio stream...`;
             const resp = await fetch(`/api/audio-url?id=${videoId}`);
             if (resp.ok) {
                 const data = await resp.json();
                 if (data.url) {
+                    // Route to Native ExoPlayer Engine (Spotify-Level background audio)
+                    if (NativePlayer.isAvailable()) {
+                        const played = await NativePlayer.play(currentPlayingTrack, data.url);
+                        if (played) {
+                            isAudioElementPlaying = true;
+                            isClientPlayerActive = false;
+                            setPlayState(true);
+                            searchStatusText.textContent = `Now Playing: "${currentPlayingTrack ? currentPlayingTrack.title : ''}"`;
+                            prefetchNextTrackForNativeQueue(videoId);
+                            return;
+                        }
+                    }
+
+                    // Web browser HTML5 Audio fallback
                     youtubeAudioPlayer.src = data.url;
                     youtubeAudioPlayer.loop = false;
                     await youtubeAudioPlayer.play();
@@ -872,6 +1018,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
         } catch (e) {
+            console.error("Audio stream load error:", e);
         }
 
         // Method 2: Fall back to YT IFrame Player
@@ -924,6 +1071,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function togglePlayPause() {
+        // Handle Native ExoPlayer playback (Spotify Engine)
+        if (isNativeExoPlayerActive && NativePlayer.isAvailable()) {
+            if (isPlaying) {
+                NativePlayer.pause();
+                setPlayState(false);
+            } else {
+                NativePlayer.resume();
+                setPlayState(true);
+            }
+            return;
+        }
+
         // Handle audio element playback (direct stream mode)
         if (isAudioElementPlaying && youtubeAudioPlayer) {
             if (isPlaying) {
@@ -1088,7 +1247,9 @@ document.addEventListener('DOMContentLoaded', () => {
     function handleScrubberSeek(e, container) {
         const rect = container.getBoundingClientRect();
         const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-        if (isAudioElementPlaying && youtubeAudioPlayer && youtubeAudioPlayer.duration) {
+        if (isNativeExoPlayerActive && NativePlayer.isAvailable() && nativeTrackDuration > 0) {
+            NativePlayer.seekTo(pct * nativeTrackDuration * 1000);
+        } else if (isAudioElementPlaying && youtubeAudioPlayer && youtubeAudioPlayer.duration) {
             youtubeAudioPlayer.currentTime = pct * youtubeAudioPlayer.duration;
         } else if (isClientPlayerActive && ytClientPlayer && ytClientPlayer.getDuration) {
             const dur = ytClientPlayer.getDuration();
