@@ -188,7 +188,7 @@ def get_audio_stream_url(video_id):
                 'socket_timeout': 10,
                 'extractor_args': {
                     'youtube': {
-                        'player_client': ['android', 'ios', 'tv_embedded']
+                        'player_client': ['android_creator', 'tv_embedded', 'android_embedded']
                     }
                 }
             }
