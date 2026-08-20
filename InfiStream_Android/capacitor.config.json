@@ -5,5 +5,10 @@
   "server": {
     "url": "https://infistream.onrender.com",
     "cleartext": true
+  },
+  "plugins": {
+    "MediaSession": {
+      "foregroundService": "always"
+    }
   }
 }
