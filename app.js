@@ -18,17 +18,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // ==========================================
     // [MODULE: 1. STATE] Global State & Context
     // ==========================================
-    document.addEventListener('deviceready', () => {
-        if (window.cordova && cordova.plugins && cordova.plugins.backgroundMode) {
-            cordova.plugins.backgroundMode.enable();
-            cordova.plugins.backgroundMode.overrideBackButton();
-            cordova.plugins.backgroundMode.on('activate', () => {
-                cordova.plugins.backgroundMode.disableWebViewOptimizations(); 
-            });
-            console.log("Capacitor Background Mode Enabled");
-        }
-    }, false);
-
     let audioCtx = null;
     let masterGain = null;
     let analyserNode = null;
