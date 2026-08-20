@@ -342,11 +342,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     youtubeAudioPlayer.addEventListener('error', () => {
         if (isAudioElementPlaying) {
-            console.warn("Audio element playback error, falling back to iframe player");
+            console.warn("Audio stream playback error");
             isAudioElementPlaying = false;
-            if (currentPlayingTrack && currentPlayingTrack.isYouTube) {
-                playViaIframePlayer(currentPlayingTrack.id);
-            }
+            setPlayState(false);
+            showToast("Audio stream unavailable for this track.");
         }
     });
 
@@ -984,21 +983,18 @@ document.addEventListener('DOMContentLoaded', () => {
         youtubeAudioPlayer.pause();
         youtubeAudioPlayer.removeAttribute('src');
         isAudioElementPlaying = false;
-        isClientPlayerActive = false;
 
-        // Method 1: Try direct audio stream via server
         try {
             searchStatusText.textContent = `Loading audio stream...`;
             const resp = await fetch(`/api/audio-url?id=${videoId}`);
             if (resp.ok) {
                 const data = await resp.json();
                 if (data.url) {
-                    // Route to Native ExoPlayer Engine (Spotify-Level background audio)
+                    // Plan A: Route to Native ExoPlayer Engine (Spotify-Level background audio)
                     if (NativePlayer.isAvailable()) {
                         const played = await NativePlayer.play(currentPlayingTrack, data.url);
                         if (played) {
                             isAudioElementPlaying = true;
-                            isClientPlayerActive = false;
                             setPlayState(true);
                             searchStatusText.textContent = `Now Playing: "${currentPlayingTrack ? currentPlayingTrack.title : ''}"`;
                             prefetchNextTrackForNativeQueue(videoId);
@@ -1011,35 +1007,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     youtubeAudioPlayer.loop = false;
                     await youtubeAudioPlayer.play();
                     isAudioElementPlaying = true;
-                    isClientPlayerActive = false;
                     setPlayState(true);
                     searchStatusText.textContent = `Now Playing: "${currentPlayingTrack ? currentPlayingTrack.title : ''}"`;
                     return;
                 }
             }
+            showToast("Direct audio stream unavailable. Trying next song...");
+            setTimeout(playNextTrack, 1500);
         } catch (e) {
             console.error("Audio stream load error:", e);
+            showToast("Network error loading track.");
+            searchStatusText.textContent = "Playback error";
         }
-
-        // Method 2: Fall back to YT IFrame Player
-        playViaIframePlayer(videoId);
-    }
-
-    function playViaIframePlayer(videoId) {
-        isClientPlayerActive = true;
-        isAudioElementPlaying = false;
-        youtubeAudioPlayer.pause();
-
-        initYTPlayer();
-        if (ytPlayerReady && ytClientPlayer && typeof ytClientPlayer.loadVideoById === 'function') {
-            ytClientPlayer.loadVideoById(videoId);
-            ytClientPlayer.playVideo();
-            setPlayState(true);
-        } else {
-            pendingVideoId = videoId;
-            setPlayState(true);
-        }
-        searchStatusText.textContent = `Now Playing: "${currentPlayingTrack ? currentPlayingTrack.title : ''}"`;
     }
 
     function setPlayState(playing) {
