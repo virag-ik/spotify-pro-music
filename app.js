@@ -33,8 +33,14 @@ document.addEventListener('DOMContentLoaded', () => {
     let isYTIframeReady = false;
     let isPlayingViaYTIframe = false;
     let ytTickerInterval = null;
+    let pendingYTTrackId = null;
 
-    window.onYouTubeIframeAPIReady = function() {
+    function initYouTubeIframe() {
+        if (typeof YT === 'undefined' || !YT.Player) return;
+        if (ytIframePlayer) return;
+        const container = document.getElementById('ytPlayerContainer');
+        if (!container) return;
+
         ytIframePlayer = new YT.Player('ytPlayerContainer', {
             height: '200',
             width: '200',
@@ -47,7 +53,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 'origin': window.location.origin
             },
             events: {
-                'onReady': () => { isYTIframeReady = true; },
+                'onReady': () => {
+                    isYTIframeReady = true;
+                    if (pendingYTTrackId) {
+                        ytIframePlayer.loadVideoById(pendingYTTrackId);
+                        ytIframePlayer.playVideo();
+                        pendingYTTrackId = null;
+                    }
+                },
                 'onError': (e) => {
                     console.warn("YouTube Player error code:", e.data);
                     setPlayState(false);
@@ -73,7 +86,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
         });
-    };
+    }
+
+    window.onYouTubeIframeAPIReady = initYouTubeIframe;
+    if (typeof YT !== 'undefined' && YT.Player) {
+        initYouTubeIframe();
+    }
 
     function startYTProgressTicker() {
         stopYTProgressTicker();
@@ -1070,25 +1088,28 @@ document.addEventListener('DOMContentLoaded', () => {
         // 1. Pure YouTube Engine (Official Player Engine)
         if (currentPlayingTrack && (currentPlayingTrack.source === 'youtube' || (trackId && trackId.length === 11))) {
             isPlayingViaYTIframe = true;
+            setPlayState(true);
+            updateMediaSession(currentPlayingTrack);
+            searchStatusText.textContent = `Playing Pure YouTube: "${currentPlayingTrack.title}"`;
+            prefetchNextTrackForNativeQueue(trackId);
+
+            if (!ytIframePlayer) {
+                initYouTubeIframe();
+            }
+
             if (ytIframePlayer && isYTIframeReady) {
                 ytIframePlayer.loadVideoById(trackId);
                 ytIframePlayer.playVideo();
-                setPlayState(true);
-                updateMediaSession(currentPlayingTrack);
-                searchStatusText.textContent = `Playing Pure YouTube: "${currentPlayingTrack.title}"`;
-                prefetchNextTrackForNativeQueue(trackId);
-                return;
-            } else if (ytIframePlayer) {
+            } else {
+                pendingYTTrackId = trackId;
                 setTimeout(() => {
-                    if (ytIframePlayer) {
+                    if (ytIframePlayer && isYTIframeReady) {
                         ytIframePlayer.loadVideoById(trackId);
                         ytIframePlayer.playVideo();
-                        setPlayState(true);
-                        updateMediaSession(currentPlayingTrack);
                     }
-                }, 600);
-                return;
+                }, 500);
             }
+            return;
         }
 
         // 2. Pure Studio Master Engine (320kbps CD Lossless)
