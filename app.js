@@ -99,29 +99,50 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    const playedSessionIds = new Set();
+
+    function recordPlayedTrack(trackId) {
+        if (!trackId) return;
+        playedSessionIds.add(trackId);
+        if (playedSessionIds.size > 50) {
+            const firstKey = playedSessionIds.values().next().value;
+            playedSessionIds.delete(firstKey);
+        }
+    }
+
     // Multi-Song Rolling Queue into native Android ExoPlayer memory buffer
     async function prefetchNextTrackForNativeQueue(currentTrackId) {
         if (!NativePlayer.isAvailable()) return;
         try {
-            const relResp = await fetch(`/api/related?id=${currentTrackId}`);
-            if (!relResp.ok) return;
-            const relData = await relResp.json();
-            if (relData.results && relData.results.length > 0) {
-                // Queue top distinct recommended songs into ExoPlayer rolling buffer
-                const queueTracks = relData.results.filter(r => r.id !== currentTrackId).slice(0, 5);
-                for (const nextTrack of queueTracks) {
-                    let streamUrl = nextTrack.url;
-                    if (!streamUrl) {
-                        const audioResp = await fetch(`/api/audio-url?id=${nextTrack.id}`);
-                        if (audioResp.ok) {
-                            const audioData = await audioResp.json();
-                            streamUrl = audioData.url;
-                        }
+            // 1. Prioritize natural upcoming tracks in currentTrackList
+            let upcoming = currentTrackList.slice(currentTrackIdx + 1, currentTrackIdx + 6);
+
+            // 2. If fewer than 3 upcoming songs, fetch fresh recommendations
+            if (upcoming.length < 3) {
+                const relResp = await fetch(`/api/related?id=${currentTrackId}`);
+                if (relResp.ok) {
+                    const relData = await relResp.json();
+                    if (relData.results && relData.results.length > 0) {
+                        const fresh = relData.results
+                            .filter(r => r.id !== currentTrackId && !playedSessionIds.has(r.id) && !upcoming.some(u => u.id === r.id))
+                            .map(r => ({ ...r, isYouTube: true }));
+                        upcoming.push(...fresh.slice(0, 5 - upcoming.length));
                     }
-                    if (streamUrl) {
-                        await NativePlayer.queueNext(nextTrack, streamUrl);
-                        console.log(`[ExoPlayer Multi-Queue] Pre-buffered: ${nextTrack.title}`);
+                }
+            }
+
+            for (const nextTrack of upcoming) {
+                let streamUrl = nextTrack.url;
+                if (!streamUrl) {
+                    const audioResp = await fetch(`/api/audio-url?id=${nextTrack.id}`);
+                    if (audioResp.ok) {
+                        const audioData = await audioResp.json();
+                        streamUrl = audioData.url;
                     }
+                }
+                if (streamUrl) {
+                    await NativePlayer.queueNext(nextTrack, streamUrl);
+                    console.log(`[ExoPlayer Multi-Queue] Pre-buffered: ${nextTrack.title}`);
                 }
             }
         } catch (e) {
@@ -875,6 +896,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function playTrack(track) {
         initAudioEngine();
         currentPlayingTrack = track;
+        recordPlayedTrack(track.id);
         addToPlayHistory(track);
         updateMediaSession(track);
 
@@ -1038,56 +1060,74 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let isFetchingRelated = false;
 
-    async function playRelatedSong(videoId) {
+    async function fetchAndAppendRecommendations(songId) {
         if (isFetchingRelated) return;
         isFetchingRelated = true;
         try {
-            searchStatusText.textContent = `Finding a related song...`;
-            const resp = await fetch(`/api/related?id=${videoId}`);
-            const data = await resp.json();
-            if (data.results && data.results.length > 0) {
-                // Pick the first related song that isn't already the current song
-                const next = data.results.find(r => r.id !== videoId);
-                if (next) {
-                    const track = { ...next, isYouTube: true };
-                    currentTrackList = [currentPlayingTrack, track];
-                    currentTrackIdx = 1;
-                    isCuratedList = false;
-                    showToast(`Up next: ${track.title} 🎵`);
-                    playTrack(track);
-                    isFetchingRelated = false;
-                    return;
+            searchStatusText.textContent = `Discovering new tracks...`;
+            const resp = await fetch(`/api/related?id=${songId}`);
+            if (resp.ok) {
+                const data = await resp.json();
+                if (data.results && data.results.length > 0) {
+                    // Filter out already played songs and songs already in currentTrackList
+                    const freshTracks = data.results
+                        .filter(r => r.id !== songId && !playedSessionIds.has(r.id) && !currentTrackList.some(t => t.id === r.id))
+                        .map(r => ({ ...r, isYouTube: true }));
+
+                    if (freshTracks.length > 0) {
+                        currentTrackList.push(...freshTracks);
+                        showToast(`Queued ${freshTracks.length} fresh songs 🎵`);
+                    }
                 }
             }
         } catch (e) {
-            console.error("Related songs fetch error:", e);
+            console.error("Recommendations append error:", e);
         }
         isFetchingRelated = false;
-        searchStatusText.textContent = `No related songs found.`;
     }
 
-    function playNextTrack() {
+    async function playNextTrack() {
         if (currentTrackList.length === 0) return;
 
+        // Shuffle Mode: Pick a random track from currentTrackList prioritizing unplayed
         if (isShuffle) {
-            currentTrackIdx = Math.floor(Math.random() * currentTrackList.length);
-            playTrack(currentTrackList[currentTrackIdx]);
+            let candidates = currentTrackList.filter(t => !playedSessionIds.has(t.id));
+            if (candidates.length === 0) candidates = currentTrackList;
+            const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+            currentTrackIdx = currentTrackList.indexOf(chosen);
+            playTrack(chosen);
             return;
         }
 
         const nextIdx = currentTrackIdx + 1;
 
-        // If we're in a curated list (playlist/liked songs), loop through normally
-        if (isCuratedList) {
-            currentTrackIdx = nextIdx % currentTrackList.length;
+        // 1. If we still have songs in current active list, play through in order
+        if (nextIdx < currentTrackList.length) {
+            currentTrackIdx = nextIdx;
             playTrack(currentTrackList[currentTrackIdx]);
             return;
         }
 
-        // Non-curated mode (Search, History, Trending) — always use recommendation engine immediately
-        if (currentPlayingTrack && currentPlayingTrack.isYouTube) {
-            playRelatedSong(currentPlayingTrack.id);
+        // 2. Curated mode (User Playlist / Liked Songs) -> loop to beginning
+        if (isCuratedList) {
+            currentTrackIdx = 0;
+            playTrack(currentTrackList[0]);
+            return;
         }
+
+        // 3. End of search/chart list -> fetch fresh non-repeating recommendations
+        if (currentPlayingTrack) {
+            await fetchAndAppendRecommendations(currentPlayingTrack.id);
+            if (currentTrackIdx + 1 < currentTrackList.length) {
+                currentTrackIdx++;
+                playTrack(currentTrackList[currentTrackIdx]);
+                return;
+            }
+        }
+
+        // Fallback: loop to start
+        currentTrackIdx = 0;
+        playTrack(currentTrackList[0]);
     }
 
     function playPrevTrack() {
