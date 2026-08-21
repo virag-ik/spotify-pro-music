@@ -179,6 +179,82 @@ def get_studio_recommendations(song_id):
         print(f"Recommendations error for {song_id}: {e}")
     return results
 
+def search_youtube_music(query):
+    """Search YouTube catalog via InnerTube WEB client."""
+    url = 'https://www.youtube.com/youtubei/v1/search'
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Content-Type': 'application/json'}
+    payload = {
+        'context': {'client': {'clientName': 'WEB', 'clientVersion': '2.20240101.00.00', 'hl': 'en', 'gl': 'US'}},
+        'query': query
+    }
+    results = []
+    seen = set()
+    try:
+        req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers=headers)
+        with urllib.request.urlopen(req, timeout=5, context=ssl_ctx) as resp:
+            data = json.loads(resp.read().decode('utf-8', 'replace'))
+            sections = data.get('contents', {}).get('twoColumnSearchResultsRenderer', {}).get('primaryContents', {}).get('sectionListRenderer', {}).get('contents', [])
+            for sec in sections:
+                contents = sec.get('itemSectionRenderer', {}).get('contents', [])
+                for item in contents:
+                    vr = item.get('videoRenderer', {})
+                    vid_id = vr.get('videoId')
+                    if vid_id and vid_id not in seen:
+                        seen.add(vid_id)
+                        title = vr.get('title', {}).get('runs', [{}])[0].get('text', 'YouTube Track')
+                        artist = vr.get('ownerText', {}).get('runs', [{}])[0].get('text', 'YouTube Artist')
+                        dur = vr.get('lengthText', {}).get('simpleText', '3:30')
+                        img = f'https://i.ytimg.com/vi/{vid_id}/hqdefault.jpg'
+                        results.append({
+                            'id': vid_id,
+                            'title': title,
+                            'uploader': artist,
+                            'durationStr': dur,
+                            'thumbnail': img,
+                            'source': 'youtube',
+                            'isYouTube': True
+                        })
+    except Exception as e:
+        print(f"YouTube search error: {e}")
+    return results
+
+def get_youtube_recommendations(video_id):
+    """Fetch YouTube recommendations or fallback to related studio tracks."""
+    url = 'https://www.youtube.com/youtubei/v1/next'
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Content-Type': 'application/json'}
+    payload = {
+        'context': {'client': {'clientName': 'WEB', 'clientVersion': '2.20240101.00.00', 'hl': 'en', 'gl': 'US'}},
+        'videoId': video_id
+    }
+    results = []
+    try:
+        req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers=headers)
+        with urllib.request.urlopen(req, timeout=5, context=ssl_ctx) as resp:
+            data = json.loads(resp.read().decode('utf-8', 'replace'))
+            contents = data.get('contents', {}).get('twoColumnWatchNextResults', {}).get('secondaryResults', {}).get('secondaryResults', {}).get('results', [])
+            for item in contents:
+                cr = item.get('compactVideoRenderer', {})
+                vid_id = cr.get('videoId')
+                if vid_id and vid_id != video_id:
+                    title = cr.get('title', {}).get('simpleText') or cr.get('title', {}).get('runs', [{}])[0].get('text', '')
+                    artist = cr.get('shortBylineText', {}).get('runs', [{}])[0].get('text', 'YouTube Artist')
+                    dur = cr.get('lengthText', {}).get('simpleText', '3:30')
+                    img = f'https://i.ytimg.com/vi/{vid_id}/hqdefault.jpg'
+                    results.append({
+                        'id': vid_id,
+                        'title': title,
+                        'uploader': artist,
+                        'durationStr': dur,
+                        'thumbnail': img,
+                        'source': 'youtube',
+                        'isYouTube': True
+                    })
+                    if len(results) >= 15:
+                        break
+    except Exception as e:
+        print(f"YouTube recommendations error: {e}")
+    return results
+
 def get_studio_lyrics(song_id):
     """Fetch official lyrics for a song ID."""
     url = f"https://www.jiosaavn.com/api.php?__call=lyrics.getLyrics&lyrics_id={song_id}&_format=json&_marker=0&cc=in"
@@ -205,6 +281,25 @@ def get_studio_charts(category='global'):
     query = chart_query_map.get(category, 'Top Pop Hits')
     return search_studio_music(query)
 
+def get_audio_stream_universal(song_id, title=None, artist=None):
+    """Universal audio stream resolver supporting both Option B (Studio) and Option A (YouTube)."""
+    # 1. Try resolving as direct Studio PID
+    stream_url = get_studio_stream_url(song_id)
+    if stream_url:
+        return stream_url
+
+    # 2. If it's a YouTube ID or not found, match by title + artist in Studio Catalog
+    search_q = f"{title or ''} {artist or ''}".strip() or song_id
+    if search_q and len(search_q) > 2:
+        # Clean title of video noise
+        clean_q = re.sub(r'(?i)\b(official|video|audio|lyrics|hd|4k|mv|ft|feat)\b', '', search_q)
+        clean_q = re.sub(r'[^\w\s]', '', clean_q).strip()
+        matched_tracks = search_studio_music(clean_q)
+        if matched_tracks:
+            return matched_tracks[0].get('url') or get_studio_stream_url(matched_tracks[0].get('id'))
+
+    return None
+
 class InfiStreamStudioHandler(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
         self.send_header('Access-Control-Allow-Origin', '*')
@@ -228,26 +323,34 @@ class InfiStreamStudioHandler(http.server.SimpleHTTPRequestHandler):
 
         # Top Charts & Global Trending Hits
         if path == '/api/charts':
+            engine = query.get('engine', ['studio'])[0].strip().lower()
             category = query.get('category', ['global'])[0].strip()
-            results = get_studio_charts(category)
-            self.send_json_response({'results': results, 'category': category})
+            if engine == 'youtube':
+                results = search_youtube_music(f"Trending Top Hits {category}")
+            else:
+                results = get_studio_charts(category)
+            self.send_json_response({'results': results, 'category': category, 'engine': engine})
             return
 
         # Search Endpoint
         if path == '/api/search':
             search_query = query.get('q', [''])[0].strip()
+            engine = query.get('engine', ['studio'])[0].strip().lower()
+
             if not search_query:
                 self.send_json_response({'error': 'Missing query parameter q'}, 400)
                 return
 
-            results = search_studio_music(search_query)
-            if not results:
-                # Fuzzy clean query (remove extra noise words)
-                clean_q = re.sub(r'(?i)\b(video|song|official|lyrics|audio|mp3|hd|4k|download)\b', '', search_query).strip()
-                if clean_q and clean_q != search_query:
-                    results = search_studio_music(clean_q)
+            if engine == 'youtube':
+                results = search_youtube_music(search_query)
+            else:
+                results = search_studio_music(search_query)
+                if not results:
+                    clean_q = re.sub(r'(?i)\b(video|song|official|lyrics|audio|mp3|hd|4k|download)\b', '', search_query).strip()
+                    if clean_q and clean_q != search_query:
+                        results = search_studio_music(clean_q)
 
-            self.send_json_response({'results': results})
+            self.send_json_response({'results': results, 'engine': engine})
             return
 
         # Lyrics Endpoint
@@ -267,11 +370,14 @@ class InfiStreamStudioHandler(http.server.SimpleHTTPRequestHandler):
         # Direct Audio URL Endpoint — returns 320kbps MP3 audio stream URL
         elif path == '/api/audio-url':
             song_id = query.get('id', [''])[0]
+            title = query.get('title', [''])[0]
+            artist = query.get('artist', [''])[0]
+
             if not song_id:
                 self.send_json_response({'error': 'Missing song id'}, 400)
                 return
 
-            audio_url = get_studio_stream_url(song_id)
+            audio_url = get_audio_stream_universal(song_id, title, artist)
             if audio_url:
                 self.send_json_response({'url': audio_url, 'id': song_id})
             else:
@@ -281,12 +387,22 @@ class InfiStreamStudioHandler(http.server.SimpleHTTPRequestHandler):
         # Related Videos / Song Radio Endpoint — returns recommended songs for auto-play
         elif path == '/api/related':
             song_id = query.get('id', [''])[0]
+            engine = query.get('engine', ['studio'])[0].strip().lower()
+
             if not song_id:
                 self.send_json_response({'error': 'Missing song id'}, 400)
                 return
 
-            results = get_studio_recommendations(song_id)
-            self.send_json_response({'results': results, 'id': song_id})
+            if engine == 'youtube' or len(song_id) == 11:
+                results = get_youtube_recommendations(song_id)
+                if not results:
+                    results = get_studio_recommendations(song_id)
+            else:
+                results = get_studio_recommendations(song_id)
+                if not results:
+                    results = get_youtube_recommendations(song_id)
+
+            self.send_json_response({'results': results, 'id': song_id, 'engine': engine})
             return
 
         super().do_GET()

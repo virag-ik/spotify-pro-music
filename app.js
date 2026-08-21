@@ -643,13 +643,15 @@ document.addEventListener('DOMContentLoaded', () => {
     let isLoop = false;
     let isCuratedList = false; // true when playing from liked songs or user playlists
 
+    let currentEngine = localStorage.getItem('infistream_engine') || 'studio';
+
     // Fetch initial Global Top 50 trending chart tracks
     async function fetchInitialTrendingSongs() {
         try {
-            const resp = await fetch(`/api/charts?category=global`);
+            const resp = await fetch(`/api/charts?category=global&engine=${currentEngine}`);
             const data = await resp.json();
             if (data.results && data.results.length > 0) {
-                trendingYouTubeTracks = data.results.map(r => ({ ...r, isYouTube: true }));
+                trendingYouTubeTracks = data.results.map(r => ({ ...r, isYouTube: true, source: currentEngine }));
                 currentTrackList = [...trendingYouTubeTracks];
                 currentPlayingTrack = trendingYouTubeTracks[0];
                 renderHomePageSections();
@@ -805,28 +807,55 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Search YouTube (Bulletproof with Multi-Tier Fallback)
+    // Search Engine (Option A: YouTube vs Option B: Studio 320kbps)
     async function searchYouTube(query) {
         if (!query.trim()) return;
-        searchStatusText.textContent = `Searching for "${query}"...`;
+        const engineLabel = currentEngine === 'youtube' ? 'YouTube' : 'Studio Master';
+        searchStatusText.textContent = `Searching ${engineLabel} for "${query}"...`;
         searchHeading.textContent = `Search Results for "${query}"`;
 
         try {
-            const resp = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+            const resp = await fetch(`/api/search?q=${encodeURIComponent(query)}&engine=${currentEngine}`);
             const data = await resp.json();
 
             if (data.results && data.results.length > 0) {
-                currentTrackList = data.results.map(r => ({ ...r, isYouTube: true }));
+                currentTrackList = data.results.map(r => ({ ...r, isYouTube: true, source: currentEngine }));
                 renderHorizontalTrackRow(document.getElementById('trendingGrid'), currentTrackList);
-                searchStatusText.textContent = `Found ${data.results.length} ad-free tracks. Tap any song to play!`;
+                searchStatusText.textContent = `Found ${data.results.length} tracks on ${engineLabel}. Tap any song to play!`;
                 return;
             }
         } catch (err) {
-            console.error("Primary search error, trying client fallback:", err);
+            console.error("Search error:", err);
         }
 
-
         searchStatusText.textContent = `No results found for "${query}". Try another song name!`;
+    }
+
+    const btnEngineStudio = document.getElementById('btnEngineStudio');
+    const btnEngineYouTube = document.getElementById('btnEngineYouTube');
+
+    function setAudioEngine(engine) {
+        currentEngine = engine;
+        localStorage.setItem('infistream_engine', engine);
+        if (btnEngineStudio) btnEngineStudio.classList.toggle('active', engine === 'studio');
+        if (btnEngineYouTube) btnEngineYouTube.classList.toggle('active', engine === 'youtube');
+        const name = engine === 'studio' ? '💎 Studio Master 320kbps (Option B)' : '🔴 YouTube Worldwide (Option A)';
+        showToast(`Active: ${name}`);
+
+        if (ytSearchInput && ytSearchInput.value.trim().length > 0) {
+            searchYouTube(ytSearchInput.value.trim());
+        } else {
+            fetchInitialTrendingSongs();
+        }
+    }
+
+    if (btnEngineStudio) {
+        btnEngineStudio.classList.toggle('active', currentEngine === 'studio');
+        btnEngineStudio.addEventListener('click', () => setAudioEngine('studio'));
+    }
+    if (btnEngineYouTube) {
+        btnEngineYouTube.classList.toggle('active', currentEngine === 'youtube');
+        btnEngineYouTube.addEventListener('click', () => setAudioEngine('youtube'));
     }
 
     btnDoSearch.addEventListener('click', () => searchYouTube(ytSearchInput.value));
@@ -934,7 +963,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!audioUrl) {
             try {
                 searchStatusText.textContent = `Loading 320kbps audio stream...`;
-                const resp = await fetch(`/api/audio-url?id=${trackId}`);
+                const trackTitle = currentPlayingTrack ? currentPlayingTrack.title : '';
+                const trackArtist = currentPlayingTrack ? currentPlayingTrack.uploader : '';
+                const resp = await fetch(`/api/audio-url?id=${trackId}&title=${encodeURIComponent(trackTitle)}&artist=${encodeURIComponent(trackArtist)}`);
                 if (resp.ok) {
                     const data = await resp.json();
                     audioUrl = data.url;
@@ -1065,14 +1096,14 @@ document.addEventListener('DOMContentLoaded', () => {
         isFetchingRelated = true;
         try {
             searchStatusText.textContent = `Discovering new tracks...`;
-            const resp = await fetch(`/api/related?id=${songId}`);
+            const resp = await fetch(`/api/related?id=${songId}&engine=${currentEngine}`);
             if (resp.ok) {
                 const data = await resp.json();
                 if (data.results && data.results.length > 0) {
                     // Filter out already played songs and songs already in currentTrackList
                     const freshTracks = data.results
                         .filter(r => r.id !== songId && !playedSessionIds.has(r.id) && !currentTrackList.some(t => t.id === r.id))
-                        .map(r => ({ ...r, isYouTube: true }));
+                        .map(r => ({ ...r, isYouTube: true, source: currentEngine }));
 
                     if (freshTracks.length > 0) {
                         currentTrackList.push(...freshTracks);
