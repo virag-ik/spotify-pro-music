@@ -80,6 +80,23 @@ public class InfiStreamPlaybackService extends MediaSessionService {
     }
 
     @Override
+    public void onTaskRemoved(Intent rootIntent) {
+        if (player != null) {
+            player.stop();
+            player.clearMediaItems();
+            player.release();
+            player = null;
+        }
+        if (mediaSession != null) {
+            mediaSession.release();
+            mediaSession = null;
+        }
+        instance = null;
+        stopSelf();
+        super.onTaskRemoved(rootIntent);
+    }
+
+    @Override
     public void onDestroy() {
         if (mediaSession != null) {
             mediaSession.release();

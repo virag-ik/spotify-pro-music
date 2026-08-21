@@ -99,7 +99,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // Pre-queue next song into native Android ExoPlayer memory buffer for gapless screen-off auto-play
+    // Multi-Song Rolling Queue into native Android ExoPlayer memory buffer
     async function prefetchNextTrackForNativeQueue(currentTrackId) {
         if (!NativePlayer.isAvailable()) return;
         try {
@@ -107,8 +107,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!relResp.ok) return;
             const relData = await relResp.json();
             if (relData.results && relData.results.length > 0) {
-                const nextTrack = relData.results.find(r => r.id !== currentTrackId) || relData.results[0];
-                if (nextTrack) {
+                // Queue top distinct recommended songs into ExoPlayer rolling buffer
+                const queueTracks = relData.results.filter(r => r.id !== currentTrackId).slice(0, 5);
+                for (const nextTrack of queueTracks) {
                     let streamUrl = nextTrack.url;
                     if (!streamUrl) {
                         const audioResp = await fetch(`/api/audio-url?id=${nextTrack.id}`);
@@ -119,12 +120,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     if (streamUrl) {
                         await NativePlayer.queueNext(nextTrack, streamUrl);
-                        console.log(`[ExoPlayer Native Queue] Successfully pre-queued: ${nextTrack.title}`);
+                        console.log(`[ExoPlayer Multi-Queue] Pre-buffered: ${nextTrack.title}`);
                     }
                 }
             }
         } catch (e) {
-            console.error("Pre-queue fetch failed:", e);
+            console.error("Multi-song queue fetch failed:", e);
         }
     }
 
@@ -150,12 +151,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 const nextTrack = currentTrackList.find(t => t.id === data.mediaId) || {
                     id: data.mediaId,
                     title: data.title || 'Now Playing',
-                    uploader: data.artist || 'InfiStream',
-                    thumbnail: `https://i.ytimg.com/vi/${data.mediaId}/hqdefault.jpg`,
+                    uploader: data.artist || 'Studio Artist',
+                    thumbnail: (data.artworkUrl && data.artworkUrl.length > 5) ? data.artworkUrl : 'synthwave_album_cover.jpg',
                     isYouTube: true
                 };
                 currentPlayingTrack = nextTrack;
-                updatePlayingUI(nextTrack);
+                
+                // Update in-app UI immediately
+                nowPlayingCover.src = nextTrack.thumbnail;
+                nowPlayingTitle.textContent = nextTrack.title;
+                nowPlayingArtist.textContent = `${nextTrack.uploader} • Studio Master 320kbps 🛡️`;
+                if (mPlayerCover) mPlayerCover.src = nextTrack.thumbnail;
+                if (mPlayerTitle) mPlayerTitle.textContent = nextTrack.title;
+                if (mPlayerArtist) mPlayerArtist.textContent = nextTrack.uploader;
+                updateLyricsDisplay(nextTrack);
+                
+                // Auto refill the rolling queue in the background
                 prefetchNextTrackForNativeQueue(data.mediaId);
             }
         });
@@ -824,21 +835,12 @@ document.addEventListener('DOMContentLoaded', () => {
             setPlayState(false);
         };
 
-        // 1. Capacitor Native Media Session (For Android Lockscreen)
-        if (window.Capacitor && window.Capacitor.Plugins.MediaSession) {
-            try {
-                const MediaSession = window.Capacitor.Plugins.MediaSession;
-                await MediaSession.setMetadata(metadata);
-                MediaSession.setActionHandler({ action: 'play' }, handlePlay);
-                MediaSession.setActionHandler({ action: 'pause' }, handlePause);
-                MediaSession.setActionHandler({ action: 'previoustrack' }, playPrevTrack);
-                MediaSession.setActionHandler({ action: 'nexttrack' }, playNextTrack);
-            } catch (e) {
-                console.error("Capacitor MediaSession Error:", e);
-            }
+        // If running in Native Android App, ExoPlayer / Media3 manages the single notification card
+        if (NativePlayer.isAvailable()) {
+            return;
         }
 
-        // 2. Web Fallback (For Desktop / Standard Chrome PWA)
+        // Web Desktop / Browser MediaSession Handler
         if ('mediaSession' in navigator) {
             try {
                 navigator.mediaSession.metadata = new MediaMetadata(metadata);
