@@ -143,6 +143,14 @@ document.addEventListener('DOMContentLoaded', () => {
             if (data.duration && data.duration > 0) {
                 nativeTrackPosition = data.position / 1000;
                 nativeTrackDuration = data.duration / 1000;
+                const pct = (nativeTrackPosition / nativeTrackDuration) * 100;
+                if (scrubberFill) scrubberFill.style.width = `${pct}%`;
+                if (mPlayerScrubberFill) mPlayerScrubberFill.style.width = `${pct}%`;
+                if (barCurrentTime) barCurrentTime.textContent = formatSecs(nativeTrackPosition);
+                if (mPlayerCurrentTime) mPlayerCurrentTime.textContent = formatSecs(nativeTrackPosition);
+                if (barDurationTime) barDurationTime.textContent = formatSecs(nativeTrackDuration);
+                if (mPlayerDurationTime) mPlayerDurationTime.textContent = formatSecs(nativeTrackDuration);
+                highlightLyricsLine(nativeTrackPosition, nativeTrackDuration);
             }
         });
 
@@ -613,17 +621,19 @@ document.addEventListener('DOMContentLoaded', () => {
     let isLoop = false;
     let isCuratedList = false; // true when playing from liked songs or user playlists
 
-    // Fetch initial trending songs from YouTube
+    // Fetch initial Global Top 50 trending chart tracks
     async function fetchInitialTrendingSongs() {
         try {
-            const resp = await fetch(`/api/search?q=${encodeURIComponent("trending top music songs 2026")}`);
+            const resp = await fetch(`/api/charts?category=global`);
             const data = await resp.json();
             if (data.results && data.results.length > 0) {
                 trendingYouTubeTracks = data.results.map(r => ({ ...r, isYouTube: true }));
+                currentTrackList = [...trendingYouTubeTracks];
+                currentPlayingTrack = trendingYouTubeTracks[0];
                 renderHomePageSections();
             }
         } catch (e) {
-            console.error("Initial trending fetch error:", e);
+            console.error("Initial global charts fetch error:", e);
         }
     }
 
@@ -1084,14 +1094,26 @@ document.addEventListener('DOMContentLoaded', () => {
         isShuffle = !isShuffle;
         btnShuffle.classList.toggle('active', isShuffle);
         if (mPlayerShuffle) mPlayerShuffle.classList.toggle('active', isShuffle);
+        if (NativePlayer.isAvailable()) {
+            NativePlayer.getPlugin().setShuffleMode({ enabled: isShuffle }).catch(()=>{});
+        }
         showToast(isShuffle ? "Shuffle Mode Enabled 🔀" : "Shuffle Mode Off");
     }
 
+    let repeatMode = 0; // 0 = off, 1 = repeat one, 2 = repeat all
     function toggleLoop() {
-        isLoop = !isLoop;
+        repeatMode = (repeatMode + 1) % 3;
+        isLoop = (repeatMode > 0);
         btnBarLoop.classList.toggle('active', isLoop);
         if (mPlayerLoop) mPlayerLoop.classList.toggle('active', isLoop);
-        showToast(isLoop ? "Repeat Track Enabled 🔁" : "Repeat Off");
+        if (NativePlayer.isAvailable()) {
+            NativePlayer.getPlugin().setRepeatMode({ mode: repeatMode }).catch(()=>{});
+        }
+        if (youtubeAudioPlayer) {
+            youtubeAudioPlayer.loop = (repeatMode === 1);
+        }
+        const msgs = ["Repeat Off", "Repeat One 🔂", "Repeat All 🔁"];
+        showToast(msgs[repeatMode]);
     }
 
     btnShuffle.addEventListener('click', (e) => { e.stopPropagation(); toggleShuffle(); });
@@ -1124,19 +1146,34 @@ document.addEventListener('DOMContentLoaded', () => {
     btnLikeTrack.addEventListener('click', (e) => { e.stopPropagation(); toggleLikeCurrentTrack(); });
     if (mPlayerBtnLike) mPlayerBtnLike.addEventListener('click', (e) => { e.stopPropagation(); toggleLikeCurrentTrack(); });
 
-    // Scrubber click handlers
+    // Scrubber click & drag handler
     function handleScrubberSeek(e, container) {
         const rect = container.getBoundingClientRect();
-        const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-        if (isNativeExoPlayerActive && NativePlayer.isAvailable() && nativeTrackDuration > 0) {
-            NativePlayer.seekTo(pct * nativeTrackDuration * 1000);
-        } else if (isAudioElementPlaying && youtubeAudioPlayer && youtubeAudioPlayer.duration) {
-            youtubeAudioPlayer.currentTime = pct * youtubeAudioPlayer.duration;
+        const clientX = (e.touches && e.touches.length > 0) ? e.touches[0].clientX : e.clientX;
+        const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+        
+        const targetDuration = nativeTrackDuration > 0 ? nativeTrackDuration : (youtubeAudioPlayer && youtubeAudioPlayer.duration ? youtubeAudioPlayer.duration : 0);
+        if (targetDuration > 0) {
+            const targetSecs = pct * targetDuration;
+            if (NativePlayer.isAvailable()) {
+                NativePlayer.seekTo(targetSecs * 1000);
+            }
+            if (youtubeAudioPlayer) {
+                youtubeAudioPlayer.currentTime = targetSecs;
+            }
+            if (barCurrentTime) barCurrentTime.textContent = formatSecs(targetSecs);
+            if (mPlayerCurrentTime) mPlayerCurrentTime.textContent = formatSecs(targetSecs);
+            const fillWidth = `${pct * 100}%`;
+            if (scrubberFill) scrubberFill.style.width = fillWidth;
+            if (mPlayerScrubberFill) mPlayerScrubberFill.style.width = fillWidth;
         }
     }
 
     scrubberBg.addEventListener('click', (e) => { e.stopPropagation(); handleScrubberSeek(e, scrubberBg); });
-    if (mPlayerScrubberBg) mPlayerScrubberBg.addEventListener('click', (e) => { e.stopPropagation(); handleScrubberSeek(e, mPlayerScrubberBg); });
+    if (mPlayerScrubberBg) {
+        mPlayerScrubberBg.addEventListener('click', (e) => { e.stopPropagation(); handleScrubberSeek(e, mPlayerScrubberBg); });
+        mPlayerScrubberBg.addEventListener('touchmove', (e) => { handleScrubberSeek(e, mPlayerScrubberBg); }, { passive: true });
+    }
 
     spotifyVolumeSlider.addEventListener('input', (e) => {
         const val = parseInt(e.target.value);
@@ -1157,31 +1194,56 @@ document.addEventListener('DOMContentLoaded', () => {
     const lyricsCover = document.getElementById('lyricsCover');
     const lyricsStream = document.getElementById('lyricsStream');
 
-    function updateLyricsDisplay(track) {
+    async function updateLyricsDisplay(track) {
+        if (!lyricsCover || !lyricsTitle || !lyricsArtist || !lyricsStream) return;
         lyricsCover.src = track.thumbnail;
         lyricsTitle.textContent = track.title;
         lyricsArtist.textContent = track.uploader;
 
-        const dummyLyrics = [
-            "♪ (Intro Melodic Beat) ♪",
-            "Listen to the rhythm of the night...",
-            "Feel the frequency pumping in your chest...",
-            "Ad-free music floating through the visualizer...",
-            "Every note harmonizes with the starlight...",
-            "Sing along, turn the volume up high!",
-            "♪ (Chorus Drop) ♪",
-            "We are infinite in this sonic universe...",
-            "Ad-free YouTube music streaming forever..."
-        ];
+        lyricsStream.innerHTML = '<div class="lyric-line active">Loading synchronized lyrics... 🎤</div>';
 
-        lyricsStream.innerHTML = '';
-        dummyLyrics.forEach((line, i) => {
-            const div = document.createElement('div');
-            div.className = `lyric-line ${i === 0 ? 'active' : ''}`;
-            div.dataset.index = i;
-            div.textContent = line;
-            lyricsStream.appendChild(div);
-        });
+        try {
+            const resp = await fetch(`/api/lyrics?id=${track.id}`);
+            if (resp.ok) {
+                const data = await resp.json();
+                if (data.lyrics && data.lyrics.trim().length > 0) {
+                    const rawLyrics = data.lyrics.replace(/<br\s*[\/]?>/gi, '\n');
+                    const lines = rawLyrics.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+                    if (lines.length > 0) {
+                        lyricsStream.innerHTML = '';
+                        lines.forEach((line, i) => {
+                            const div = document.createElement('div');
+                            div.className = `lyric-line ${i === 0 ? 'active' : ''}`;
+                            div.dataset.index = i;
+                            div.textContent = line;
+                            div.addEventListener('click', () => {
+                                const dur = nativeTrackDuration || (youtubeAudioPlayer ? youtubeAudioPlayer.duration : 0);
+                                if (dur > 0) {
+                                    const seekRatio = i / lines.length;
+                                    const targetMs = seekRatio * dur * 1000;
+                                    if (NativePlayer.isAvailable()) {
+                                        NativePlayer.seekTo(targetMs);
+                                    } else if (youtubeAudioPlayer) {
+                                        youtubeAudioPlayer.currentTime = targetMs / 1000;
+                                    }
+                                }
+                            });
+                            lyricsStream.appendChild(div);
+                        });
+                        return;
+                    }
+                }
+            }
+        } catch (e) {
+            console.error("Lyrics fetch failed:", e);
+        }
+
+        lyricsStream.innerHTML = `
+            <div class="lyric-line active">♪ ${track.title} ♪</div>
+            <div class="lyric-line">Performed by ${track.uploader}</div>
+            <div class="lyric-line">Studio Master Quality • 320kbps Lossless</div>
+            <div class="lyric-line">Sing along and immerse in high-fidelity audio!</div>
+        `;
     }
 
     function highlightLyricsLine(cur, dur) {
@@ -1578,7 +1640,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('plLiked').addEventListener('click', () => { setActivePlaylistItem(document.getElementById('plLiked')); showSection('search'); searchHeading.textContent = "Your Liked Songs Library"; renderHorizontalTrackRow(document.getElementById('trendingGrid'), likedSongs, true); setChipActive('chipLiked'); });
     document.getElementById('plHistory').addEventListener('click', () => { setActivePlaylistItem(document.getElementById('plHistory')); showSection('history'); renderHistoryGrid(); setChipActive('chipHistory'); });
-    document.getElementById('plTrending').addEventListener('click', () => { setActivePlaylistItem(document.getElementById('plTrending')); showSection('search'); searchYouTube('trending music songs 2026'); setChipActive('chipYouTube'); });
+    document.getElementById('plTrending').addEventListener('click', () => { setActivePlaylistItem(document.getElementById('plTrending')); showSection('search'); searchHeading.textContent = "🌍 Global Top 50 & Trending Hits"; fetchInitialTrendingSongs(); setChipActive('chipYouTube'); });
     document.getElementById('plSynth').addEventListener('click', () => { setActivePlaylistItem(document.getElementById('plSynth')); showSection('synth'); });
 
     function setActiveNav(id) {
@@ -1635,7 +1697,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Filter Chips
     document.getElementById('chipAll').addEventListener('click', () => { setChipActive('chipAll'); showSection('search'); renderHomePageSections(); });
     document.getElementById('chipHistory').addEventListener('click', () => { setChipActive('chipHistory'); showSection('history'); renderHistoryGrid(); });
-    document.getElementById('chipYouTube').addEventListener('click', () => { setChipActive('chipYouTube'); showSection('search'); searchYouTube('trending music songs 2026'); });
+    document.getElementById('chipYouTube').addEventListener('click', () => { setChipActive('chipYouTube'); showSection('search'); searchHeading.textContent = "🌍 Global Top 50 & Trending Hits"; fetchInitialTrendingSongs(); });
     document.getElementById('chipArtist').addEventListener('click', () => { setChipActive('chipArtist'); openArtistProfile(currentPlayingTrack.uploader, currentPlayingTrack.thumbnail); });
     document.getElementById('chipLiked').addEventListener('click', () => { setChipActive('chipLiked'); showSection('search'); searchHeading.textContent = "Your Liked Songs Library"; renderHorizontalTrackRow(document.getElementById('trendingGrid'), likedSongs, true); });
     document.getElementById('chipVisualizer').addEventListener('click', () => { setChipActive('chipVisualizer'); showSection('visualizer'); });

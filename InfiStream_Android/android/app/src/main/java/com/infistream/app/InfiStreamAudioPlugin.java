@@ -224,6 +224,28 @@ public class InfiStreamAudioPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void setRepeatMode(PluginCall call) {
+        Integer mode = call.getInt("mode", Player.REPEAT_MODE_OFF);
+        getActivity().runOnUiThread(() -> {
+            if (mediaController != null) {
+                mediaController.setRepeatMode(mode);
+            }
+            call.resolve();
+        });
+    }
+
+    @PluginMethod
+    public void setShuffleMode(PluginCall call) {
+        Boolean enabled = call.getBoolean("enabled", false);
+        getActivity().runOnUiThread(() -> {
+            if (mediaController != null) {
+                mediaController.setShuffleModeEnabled(enabled);
+            }
+            call.resolve();
+        });
+    }
+
+    @PluginMethod
     public void getStatus(PluginCall call) {
         if (mediaController == null) {
             call.reject("MediaController not ready");

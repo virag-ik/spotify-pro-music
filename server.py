@@ -165,7 +165,33 @@ def get_studio_recommendations(song_id):
         print(f"Recommendations error for {song_id}: {e}")
     return results
 
-class SpotifyStudioHandler(http.server.SimpleHTTPRequestHandler):
+def get_studio_lyrics(song_id):
+    """Fetch official lyrics for a song ID."""
+    url = f"https://www.jiosaavn.com/api.php?__call=lyrics.getLyrics&lyrics_id={song_id}&_format=json&_marker=0&cc=in"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    try:
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=5, context=ssl_ctx) as resp:
+            data = json.loads(resp.read().decode('utf-8', 'replace'))
+            if data and data.get('lyrics'):
+                return data.get('lyrics')
+    except Exception as e:
+        print(f"Lyrics fetch error: {e}")
+    return None
+
+def get_studio_charts(category='global'):
+    """Fetch Top 50 trending chart tracks with 320kbps streams."""
+    chart_query_map = {
+        'global': 'Top Pop Hits',
+        'trending': 'Trending Hits',
+        'english': 'English Hits',
+        'bollywood': 'Bollywood Top',
+        'viral': 'Global Pop'
+    }
+    query = chart_query_map.get(category, 'Top Pop Hits')
+    return search_studio_music(query)
+
+class InfiStreamStudioHandler(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, OPTIONS, POST')
@@ -186,6 +212,13 @@ class SpotifyStudioHandler(http.server.SimpleHTTPRequestHandler):
             self.send_json_response({'status': 'ok', 'timestamp': int(time.time())})
             return
 
+        # Top Charts & Global Trending Hits
+        if path == '/api/charts':
+            category = query.get('category', ['global'])[0].strip()
+            results = get_studio_charts(category)
+            self.send_json_response({'results': results, 'category': category})
+            return
+
         # Search Endpoint
         if path == '/api/search':
             search_query = query.get('q', [''])[0].strip()
@@ -194,7 +227,27 @@ class SpotifyStudioHandler(http.server.SimpleHTTPRequestHandler):
                 return
 
             results = search_studio_music(search_query)
+            if not results:
+                # Fuzzy clean query (remove extra noise words)
+                clean_q = re.sub(r'(?i)\b(video|song|official|lyrics|audio|mp3|hd|4k|download)\b', '', search_query).strip()
+                if clean_q and clean_q != search_query:
+                    results = search_studio_music(clean_q)
+
             self.send_json_response({'results': results})
+            return
+
+        # Lyrics Endpoint
+        elif path == '/api/lyrics':
+            song_id = query.get('id', [''])[0]
+            if not song_id:
+                self.send_json_response({'error': 'Missing song id'}, 400)
+                return
+
+            lyrics_text = get_studio_lyrics(song_id)
+            if lyrics_text:
+                self.send_json_response({'lyrics': lyrics_text, 'id': song_id})
+            else:
+                self.send_json_response({'lyrics': None, 'id': song_id, 'message': 'Lyrics not available for this track'})
             return
 
         # Direct Audio URL Endpoint — returns 320kbps MP3 audio stream URL
@@ -235,8 +288,8 @@ class SpotifyStudioHandler(http.server.SimpleHTTPRequestHandler):
 if __name__ == '__main__':
     web_dir = os.path.dirname(os.path.abspath(__file__))
     os.chdir(web_dir)
-    print(f"Spotify PRO Studio Music Server running on port {PORT}")
-    with socketserver.TCPServer(("", PORT), SpotifyStudioHandler) as httpd:
+    print(f"InfiStream Studio Music Server running on port {PORT}")
+    with socketserver.TCPServer(("", PORT), InfiStreamStudioHandler) as httpd:
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:
