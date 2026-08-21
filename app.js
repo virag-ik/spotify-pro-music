@@ -145,7 +145,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 nativeTrackDuration = data.duration / 1000;
                 const pct = (nativeTrackPosition / nativeTrackDuration) * 100;
                 if (scrubberFill) scrubberFill.style.width = `${pct}%`;
-                if (mPlayerScrubberFill) mPlayerScrubberFill.style.width = `${pct}%`;
+                if (miniPlayerProgressFill) miniPlayerProgressFill.style.width = `${pct}%`;
+                if (mPlayerSeekSlider) mPlayerSeekSlider.value = Math.floor(pct * 10);
                 if (barCurrentTime) barCurrentTime.textContent = formatSecs(nativeTrackPosition);
                 if (mPlayerCurrentTime) mPlayerCurrentTime.textContent = formatSecs(nativeTrackPosition);
                 if (barDurationTime) barDurationTime.textContent = formatSecs(nativeTrackDuration);
@@ -702,8 +703,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const mPlayerNext = document.getElementById('mPlayerNext');
     const mPlayerShuffle = document.getElementById('mPlayerShuffle');
     const mPlayerLoop = document.getElementById('mPlayerLoop');
-    const mPlayerScrubberFill = document.getElementById('mPlayerScrubberFill');
-    const mPlayerScrubberBg = document.getElementById('mPlayerScrubberBg');
+    const mPlayerSeekSlider = document.getElementById('mPlayerSeekSlider');
+    const miniPlayerProgress = document.getElementById('miniPlayerProgress');
+    const miniPlayerProgressFill = document.getElementById('miniPlayerProgressFill');
+    const barLoopBadge = document.getElementById('barLoopBadge');
+    const barLoopDot = document.getElementById('barLoopDot');
+    const mLoopBadge = document.getElementById('mLoopBadge');
+    const mLoopDot = document.getElementById('mLoopDot');
     const mPlayerCurrentTime = document.getElementById('mPlayerCurrentTime');
     const mPlayerDurationTime = document.getElementById('mPlayerDurationTime');
     const mPlayerBtnLike = document.getElementById('mPlayerBtnLike');
@@ -1104,15 +1110,39 @@ document.addEventListener('DOMContentLoaded', () => {
     function toggleLoop() {
         repeatMode = (repeatMode + 1) % 3;
         isLoop = (repeatMode > 0);
+        
         btnBarLoop.classList.toggle('active', isLoop);
         if (mPlayerLoop) mPlayerLoop.classList.toggle('active', isLoop);
+
+        // Mode 0: Repeat Off
+        if (repeatMode === 0) {
+            if (barLoopBadge) barLoopBadge.classList.add('hidden');
+            if (barLoopDot) barLoopDot.classList.add('hidden');
+            if (mLoopBadge) mLoopBadge.classList.add('hidden');
+            if (mLoopDot) mLoopDot.classList.add('hidden');
+        }
+        // Mode 1: Repeat One (with '1' badge)
+        else if (repeatMode === 1) {
+            if (barLoopBadge) barLoopBadge.classList.remove('hidden');
+            if (barLoopDot) barLoopDot.classList.add('hidden');
+            if (mLoopBadge) mLoopBadge.classList.remove('hidden');
+            if (mLoopDot) mLoopDot.classList.add('hidden');
+        }
+        // Mode 2: Repeat All (with glowing dot)
+        else if (repeatMode === 2) {
+            if (barLoopBadge) barLoopBadge.classList.add('hidden');
+            if (barLoopDot) barLoopDot.classList.remove('hidden');
+            if (mLoopBadge) mLoopBadge.classList.add('hidden');
+            if (mLoopDot) mLoopDot.classList.remove('hidden');
+        }
+
         if (NativePlayer.isAvailable()) {
             NativePlayer.getPlugin().setRepeatMode({ mode: repeatMode }).catch(()=>{});
         }
         if (youtubeAudioPlayer) {
             youtubeAudioPlayer.loop = (repeatMode === 1);
         }
-        const msgs = ["Repeat Off", "Repeat One 🔂", "Repeat All 🔁"];
+        const msgs = ["Repeat Off ➡️", "Repeat One 🔂", "Repeat All 🔁"];
         showToast(msgs[repeatMode]);
     }
 
@@ -1165,20 +1195,54 @@ document.addEventListener('DOMContentLoaded', () => {
             if (mPlayerCurrentTime) mPlayerCurrentTime.textContent = formatSecs(targetSecs);
             const fillWidth = `${pct * 100}%`;
             if (scrubberFill) scrubberFill.style.width = fillWidth;
-            if (mPlayerScrubberFill) mPlayerScrubberFill.style.width = fillWidth;
+            if (miniPlayerProgressFill) miniPlayerProgressFill.style.width = fillWidth;
+            if (mPlayerSeekSlider) mPlayerSeekSlider.value = Math.floor(pct * 1000);
         }
     }
 
     scrubberBg.addEventListener('click', (e) => { e.stopPropagation(); handleScrubberSeek(e, scrubberBg); });
-    if (mPlayerScrubberBg) {
-        mPlayerScrubberBg.addEventListener('click', (e) => { e.stopPropagation(); handleScrubberSeek(e, mPlayerScrubberBg); });
-        mPlayerScrubberBg.addEventListener('touchmove', (e) => { handleScrubberSeek(e, mPlayerScrubberBg); }, { passive: true });
+    if (miniPlayerProgress) {
+        miniPlayerProgress.addEventListener('click', (e) => { e.stopPropagation(); handleScrubberSeek(e, miniPlayerProgress); });
+    }
+
+    // Touch Tactile Range Slider for Full-Screen Mobile Card
+    if (mPlayerSeekSlider) {
+        mPlayerSeekSlider.addEventListener('input', (e) => {
+            const targetRatio = parseInt(e.target.value) / 1000;
+            const targetDuration = nativeTrackDuration > 0 ? nativeTrackDuration : (youtubeAudioPlayer && youtubeAudioPlayer.duration ? youtubeAudioPlayer.duration : 0);
+            if (targetDuration > 0) {
+                const targetSecs = targetRatio * targetDuration;
+                if (mPlayerCurrentTime) mPlayerCurrentTime.textContent = formatSecs(targetSecs);
+            }
+        });
+        mPlayerSeekSlider.addEventListener('change', (e) => {
+            const targetRatio = parseInt(e.target.value) / 1000;
+            const targetDuration = nativeTrackDuration > 0 ? nativeTrackDuration : (youtubeAudioPlayer && youtubeAudioPlayer.duration ? youtubeAudioPlayer.duration : 0);
+            if (targetDuration > 0) {
+                const targetSecs = targetRatio * targetDuration;
+                if (NativePlayer.isAvailable()) {
+                    NativePlayer.seekTo(targetSecs * 1000);
+                }
+                if (youtubeAudioPlayer) {
+                    youtubeAudioPlayer.currentTime = targetSecs;
+                }
+            }
+        });
     }
 
     spotifyVolumeSlider.addEventListener('input', (e) => {
         const val = parseInt(e.target.value);
         youtubeAudioPlayer.volume = val / 100;
         if (masterGain) masterGain.gain.value = val / 100;
+    });
+
+    youtubeAudioPlayer.addEventListener('ended', () => {
+        if (repeatMode === 1) {
+            youtubeAudioPlayer.currentTime = 0;
+            youtubeAudioPlayer.play().catch(()=>{});
+        } else {
+            playNextTrack();
+        }
     });
 
     function formatSecs(secs) {

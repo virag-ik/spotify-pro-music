@@ -60,6 +60,18 @@ public class InfiStreamPlaybackService extends MediaSessionService {
                 .setWakeMode(C.WAKE_MODE_NETWORK) // Keep CPU and network alive during playback
                 .build();
 
+        player.addListener(new Player.Listener() {
+            @Override
+            public void onPlaybackStateChanged(int playbackState) {
+                if (playbackState == Player.STATE_ENDED) {
+                    if (player != null && player.hasNextMediaItem()) {
+                        player.seekToNextMediaItem();
+                        player.play();
+                    }
+                }
+            }
+        });
+
         Intent intent = new Intent(this, MainActivity.class);
         PendingIntent pendingIntent = PendingIntent.getActivity(
                 this,

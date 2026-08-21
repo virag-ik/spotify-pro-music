@@ -40,10 +40,12 @@ def format_dur(seconds):
     return f"{m}:{s:02d}"
 
 def search_studio_music(query):
-    """Search studio-quality tracks from the open JioSaavn catalog with 320kbps direct streams."""
-    url = f"https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&cc=in&p=1&n=20&q={urllib.parse.quote(query)}"
+    """Search studio-quality tracks with 50+ results, correct HD artwork, and smart de-duplication."""
+    url = f"https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&cc=in&p=1&n=50&q={urllib.parse.quote(query)}"
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     results = []
+    seen_keys = set()
+
     try:
         req = urllib.request.Request(url, headers=headers)
         with urllib.request.urlopen(req, timeout=6, context=ssl_ctx) as resp:
@@ -53,25 +55,37 @@ def search_studio_music(query):
             pids_to_fetch = [item.get('id') for item in raw_results if item.get('id')]
             details_map = {}
             if pids_to_fetch:
-                try:
-                    det_url = f"https://www.jiosaavn.com/api.php?__call=song.getDetails&pids={','.join(pids_to_fetch[:20])}&_format=json&_marker=0&cc=in"
-                    det_req = urllib.request.Request(det_url, headers=headers)
-                    with urllib.request.urlopen(det_req, timeout=6, context=ssl_ctx) as det_resp:
-                        details_map = json.loads(det_resp.read().decode('utf-8', 'replace'))
-                except Exception as e:
-                    print(f"Batch details fetch error: {e}")
+                # Fetch details in chunks of 25 to avoid URL length issues
+                for i in range(0, len(pids_to_fetch), 25):
+                    chunk = pids_to_fetch[i:i+25]
+                    try:
+                        det_url = f"https://www.jiosaavn.com/api.php?__call=song.getDetails&pids={','.join(chunk)}&_format=json&_marker=0&cc=in"
+                        det_req = urllib.request.Request(det_url, headers=headers)
+                        with urllib.request.urlopen(det_req, timeout=6, context=ssl_ctx) as det_resp:
+                            chunk_map = json.loads(det_resp.read().decode('utf-8', 'replace'))
+                            if isinstance(chunk_map, dict):
+                                details_map.update(chunk_map)
+                    except Exception as e:
+                        print(f"Batch details chunk error: {e}")
 
             for item in raw_results:
                 s_id = item.get('id')
                 if not s_id:
                     continue
-                info = details_map.get(s_id, item)
+                info = details_map.get(s_id) or item
                 
                 title = info.get('song') or item.get('song') or "Unknown Track"
                 artist = info.get('primary_artists') or info.get('singers') or item.get('primary_artists') or "Studio Artist"
                 album = info.get('album') or item.get('album') or ""
                 dur_secs = int(info.get('duration') or item.get('duration') or 0)
                 
+                # Smart De-Duplication: check normalized title + artist
+                norm_key = re.sub(r'[^a-zA-Z0-9]', '', (title + artist[:12]).lower())
+                if norm_key in seen_keys:
+                    continue
+                seen_keys.add(norm_key)
+
+                # Correct 500x500 HD Cover Art
                 img = info.get('image') or item.get('image') or ""
                 if img:
                     img = img.replace("150x150", "500x500").replace("50x50", "500x500")

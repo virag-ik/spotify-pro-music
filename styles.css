@@ -1537,3 +1537,84 @@ canvas#spotifyCanvas {
         height: 80px;
     }
 }
+
+/* InfiStream Mobile Mini Player Top Progress Bar */
+.mini-player-top-progress {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 3px;
+    background: rgba(255, 255, 255, 0.15);
+    cursor: pointer;
+    z-index: 50;
+}
+
+.mini-player-top-fill {
+    height: 100%;
+    background: #1db954;
+    box-shadow: 0 0 8px #1db954;
+    transition: width 0.2s linear;
+}
+
+/* InfiStream Tactile Mobile Seek Slider */
+.m-tactile-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 6px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.2);
+    outline: none;
+    cursor: pointer;
+    margin: 0.8rem 0;
+    accent-color: #1db954;
+}
+
+.m-tactile-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #ffffff;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.5), 0 0 6px #1db954;
+    cursor: pointer;
+    border: 2px solid #1db954;
+}
+
+/* 3-Mode Loop Button Badge & Indicators */
+.loop-btn-wrapper {
+    position: relative !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+.loop-badge {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    background: #1db954;
+    color: #000000;
+    font-size: 0.6rem;
+    font-weight: 900;
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    box-shadow: 0 0 4px rgba(0, 0, 0, 0.6);
+}
+
+.loop-dot {
+    position: absolute;
+    bottom: -4px;
+    width: 4px;
+    height: 4px;
+    background: #1db954;
+    border-radius: 50%;
+    box-shadow: 0 0 4px #1db954;
+}
