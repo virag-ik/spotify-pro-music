@@ -960,37 +960,52 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         const handlePlay = () => {
-            if (NativePlayer.isAvailable()) {
+            if (isPlayingViaYTIframe && ytIframePlayer) {
+                ytIframePlayer.playVideo();
+                setPlayState(true);
+            } else if (NativePlayer.isAvailable()) {
                 NativePlayer.resume();
-            } else if (youtubeAudioPlayer && youtubeAudioPlayer.src) {
+                setPlayState(true);
+            } else if (youtubeAudioPlayer) {
                 youtubeAudioPlayer.play().catch(() => {});
+                setPlayState(true);
             }
-            setPlayState(true);
         };
 
         const handlePause = () => {
-            if (NativePlayer.isAvailable()) {
+            if (isPlayingViaYTIframe && ytIframePlayer) {
+                ytIframePlayer.pauseVideo();
+                setPlayState(false);
+            } else if (NativePlayer.isAvailable()) {
                 NativePlayer.pause();
-            } else if (youtubeAudioPlayer && !youtubeAudioPlayer.paused) {
+                setPlayState(false);
+            } else if (youtubeAudioPlayer) {
                 youtubeAudioPlayer.pause();
+                setPlayState(false);
             }
-            setPlayState(false);
         };
 
-        // If running in Native Android App, ExoPlayer / Media3 manages the single notification card
-        if (NativePlayer.isAvailable()) {
-            return;
-        }
-
-        // Web Desktop / Browser MediaSession Handler
+        // Web Desktop & Mobile Android MediaSession Handler
         if ('mediaSession' in navigator) {
             try {
                 navigator.mediaSession.metadata = new MediaMetadata(metadata);
                 navigator.mediaSession.setActionHandler('play', handlePlay);
                 navigator.mediaSession.setActionHandler('pause', handlePause);
-                navigator.mediaSession.setActionHandler('previoustrack', playPrevTrack);
-                navigator.mediaSession.setActionHandler('nexttrack', playNextTrack);
+                navigator.mediaSession.setActionHandler('previoustrack', () => playPrevTrack());
+                navigator.mediaSession.setActionHandler('nexttrack', () => playNextTrack());
+                navigator.mediaSession.setActionHandler('seekto', (details) => {
+                    if (details.seekTime) {
+                        if (isPlayingViaYTIframe && ytIframePlayer) {
+                            ytIframePlayer.seekTo(details.seekTime, true);
+                        } else if (NativePlayer.isAvailable()) {
+                            NativePlayer.seekTo(details.seekTime * 1000);
+                        } else if (youtubeAudioPlayer) {
+                            youtubeAudioPlayer.currentTime = details.seekTime;
+                        }
+                    }
+                });
             } catch (e) {
+                console.warn("MediaSession register error:", e);
             }
         }
     }
@@ -1044,6 +1059,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ytIframePlayer.loadVideoById(trackId);
                 ytIframePlayer.playVideo();
                 setPlayState(true);
+                updateMediaSession(currentPlayingTrack);
                 searchStatusText.textContent = `Playing Pure YouTube: "${currentPlayingTrack.title}"`;
                 prefetchNextTrackForNativeQueue(trackId);
                 return;
