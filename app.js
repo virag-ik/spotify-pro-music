@@ -50,8 +50,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 'onReady': () => { isYTIframeReady = true; },
                 'onError': (e) => {
                     console.warn("YouTube Player error code:", e.data);
-                    showToast("YouTube video unavailable. Trying next song...");
-                    setTimeout(playNextTrack, 1500);
+                    setPlayState(false);
+                    stopYTProgressTicker();
+                    showToast("Video restricted by YouTube. Please tap another track.");
                 },
                 'onStateChange': (event) => {
                     if (event.data === YT.PlayerState.PLAYING) {
@@ -1066,30 +1067,26 @@ document.addEventListener('DOMContentLoaded', () => {
         youtubeAudioPlayer.removeAttribute('src');
         isAudioElementPlaying = false;
 
-        // 1. Pure YouTube Engine (Native ExoPlayer on Mobile / IFrame on Desktop)
+        // 1. Pure YouTube Engine (Official Player Engine)
         if (currentPlayingTrack && (currentPlayingTrack.source === 'youtube' || (trackId && trackId.length === 11))) {
-            if (NativePlayer.isAvailable()) {
-                searchStatusText.textContent = `Loading YouTube Audio: "${currentPlayingTrack.title}"...`;
-                const playedNatively = await NativePlayer.playYouTube(currentPlayingTrack);
-                if (playedNatively) {
-                    isPlayingViaYTIframe = false;
-                    isAudioElementPlaying = true;
-                    setPlayState(true);
-                    updateMediaSession(currentPlayingTrack);
-                    searchStatusText.textContent = `Playing Native YouTube: "${currentPlayingTrack.title}"`;
-                    prefetchNextTrackForNativeQueue(trackId);
-                    return;
-                }
-            }
-
+            isPlayingViaYTIframe = true;
             if (ytIframePlayer && isYTIframeReady) {
-                isPlayingViaYTIframe = true;
                 ytIframePlayer.loadVideoById(trackId);
                 ytIframePlayer.playVideo();
                 setPlayState(true);
                 updateMediaSession(currentPlayingTrack);
                 searchStatusText.textContent = `Playing Pure YouTube: "${currentPlayingTrack.title}"`;
                 prefetchNextTrackForNativeQueue(trackId);
+                return;
+            } else if (ytIframePlayer) {
+                setTimeout(() => {
+                    if (ytIframePlayer) {
+                        ytIframePlayer.loadVideoById(trackId);
+                        ytIframePlayer.playVideo();
+                        setPlayState(true);
+                        updateMediaSession(currentPlayingTrack);
+                    }
+                }, 600);
                 return;
             }
         }
@@ -1140,8 +1137,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        showToast("Audio stream unavailable. Trying next song...");
-        setTimeout(playNextTrack, 1500);
+        showToast("Track unavailable. Tap any other song to play.");
+        setPlayState(false);
     }
 
     function setPlayState(playing) {
