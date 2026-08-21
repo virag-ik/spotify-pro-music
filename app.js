@@ -48,6 +48,11 @@ document.addEventListener('DOMContentLoaded', () => {
             },
             events: {
                 'onReady': () => { isYTIframeReady = true; },
+                'onError': (e) => {
+                    console.warn("YouTube Player error code:", e.data);
+                    showToast("YouTube video unavailable. Trying next song...");
+                    setTimeout(playNextTrack, 1500);
+                },
                 'onStateChange': (event) => {
                     if (event.data === YT.PlayerState.PLAYING) {
                         setPlayState(true);

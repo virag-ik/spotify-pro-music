@@ -461,11 +461,11 @@
     </div>
 
     <!-- Pure YouTube & Audio Playback Containers -->
-    <div id="ytPlayerContainer" style="position:fixed; bottom:-9999px; left:-9999px; width:1px; height:1px; opacity:0; pointer-events:none;"></div>
+    <div id="ytPlayerContainer" style="position:fixed; bottom:0; right:0; width:200px; height:200px; opacity:0.001; pointer-events:none; z-index:-100;"></div>
     <audio id="youtubeAudioPlayer" playsinline preload="auto"></audio>
 
     <script src="https://www.youtube.com/iframe_api"></script>
-    <script src="app.js?v=3"></script>
+    <script src="app.js?v=4"></script>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {

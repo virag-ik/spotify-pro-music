@@ -180,42 +180,85 @@ def get_studio_recommendations(song_id):
     return results
 
 def search_youtube_music(query):
-    """Search YouTube catalog via InnerTube WEB client."""
-    url = 'https://www.youtube.com/youtubei/v1/search'
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Content-Type': 'application/json'}
-    payload = {
-        'context': {'client': {'clientName': 'WEB', 'clientVersion': '2.20240101.00.00', 'hl': 'en', 'gl': 'US'}},
-        'query': query
-    }
+    """Search pure YouTube Music catalog (eliminating non-music clutter)."""
     results = []
     seen = set()
+
+    # 1. Primary: YouTube Music Engine (WEB_REMIX)
     try:
+        url = 'https://music.youtube.com/youtubei/v1/search'
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Content-Type': 'application/json'}
+        payload = {
+            'context': {'client': {'clientName': 'WEB_REMIX', 'clientVersion': '1.20240101.01.00', 'hl': 'en', 'gl': 'US'}},
+            'query': query
+        }
         req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers=headers)
         with urllib.request.urlopen(req, timeout=5, context=ssl_ctx) as resp:
             data = json.loads(resp.read().decode('utf-8', 'replace'))
-            sections = data.get('contents', {}).get('twoColumnSearchResultsRenderer', {}).get('primaryContents', {}).get('sectionListRenderer', {}).get('contents', [])
-            for sec in sections:
-                contents = sec.get('itemSectionRenderer', {}).get('contents', [])
-                for item in contents:
-                    vr = item.get('videoRenderer', {})
-                    vid_id = vr.get('videoId')
-                    if vid_id and vid_id not in seen:
-                        seen.add(vid_id)
-                        title = vr.get('title', {}).get('runs', [{}])[0].get('text', 'YouTube Track')
-                        artist = vr.get('ownerText', {}).get('runs', [{}])[0].get('text', 'YouTube Artist')
-                        dur = vr.get('lengthText', {}).get('simpleText', '3:30')
-                        img = f'https://i.ytimg.com/vi/{vid_id}/hqdefault.jpg'
-                        results.append({
-                            'id': vid_id,
-                            'title': title,
-                            'uploader': artist,
-                            'durationStr': dur,
-                            'thumbnail': img,
-                            'source': 'youtube',
-                            'isYouTube': True
-                        })
+            tabs = data.get('contents', {}).get('tabbedSearchResultsRenderer', {}).get('tabs', [])
+            for tab in tabs:
+                contents = tab.get('tabRenderer', {}).get('content', {}).get('sectionListRenderer', {}).get('contents', [])
+                for sec in contents:
+                    shelf = sec.get('musicShelfRenderer', {}) or sec.get('musicCardShelfRenderer', {})
+                    for item in shelf.get('contents', []):
+                        mr = item.get('musicResponsiveListItemRenderer', {})
+                        if not mr: continue
+                        vid_id = None
+                        flex = mr.get('flexColumns', [])
+                        title = 'Unknown Track'
+                        artist = 'Music Artist'
+                        dur = '3:30'
+                        if len(flex) > 0:
+                            runs0 = flex[0].get('musicResponsiveListItemFlexColumnRenderer', {}).get('text', {}).get('runs', [])
+                            if runs0:
+                                title = runs0[0].get('text', '')
+                                ep = runs0[0].get('navigationEndpoint', {}).get('watchEndpoint', {})
+                                if ep.get('videoId'): vid_id = ep.get('videoId')
+                        if len(flex) > 1:
+                            runs1 = flex[1].get('musicResponsiveListItemFlexColumnRenderer', {}).get('text', {}).get('runs', [])
+                            artists = [r.get('text') for r in runs1 if r.get('text') and r.get('text') not in [' • ', ' •', '• ', '•']]
+                            if artists: artist = ', '.join(artists[:2])
+                            if len(runs1) > 2 and ':' in runs1[-1].get('text', ''):
+                                dur = runs1[-1].get('text', '3:30')
+                        if not vid_id:
+                            overlay = mr.get('overlay', {}).get('musicItemThumbnailOverlayRenderer', {}).get('content', {}).get('musicPlayButtonRenderer', {}).get('playNavigationEndpoint', {}).get('watchEndpoint', {})
+                            if overlay.get('videoId'): vid_id = overlay.get('videoId')
+                        if vid_id and vid_id not in seen:
+                            seen.add(vid_id)
+                            thumbs = mr.get('thumbnail', {}).get('musicThumbnailRenderer', {}).get('thumbnail', {}).get('thumbnails', [])
+                            img = thumbs[-1].get('url') if thumbs else f'https://i.ytimg.com/vi/{vid_id}/hqdefault.jpg'
+                            results.append({'id': vid_id, 'title': title, 'uploader': artist, 'durationStr': dur, 'thumbnail': img, 'source': 'youtube', 'isYouTube': True})
     except Exception as e:
-        print(f"YouTube search error: {e}")
+        print(f"YouTube Music search error: {e}")
+
+    # 2. Secondary: If needed, query YouTube with music category params
+    if not results:
+        try:
+            url = 'https://www.youtube.com/youtubei/v1/search'
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Content-Type': 'application/json'}
+            payload = {
+                'context': {'client': {'clientName': 'WEB', 'clientVersion': '2.20240101.00.00', 'hl': 'en', 'gl': 'US'}},
+                'query': f"{query} music"
+            }
+            req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers=headers)
+            with urllib.request.urlopen(req, timeout=5, context=ssl_ctx) as resp:
+                data = json.loads(resp.read().decode('utf-8', 'replace'))
+                sections = data.get('contents', {}).get('twoColumnSearchResultsRenderer', {}).get('primaryContents', {}).get('sectionListRenderer', {}).get('contents', [])
+                for sec in sections:
+                    contents = sec.get('itemSectionRenderer', {}).get('contents', [])
+                    for item in contents:
+                        vr = item.get('videoRenderer', {})
+                        vid_id = vr.get('videoId')
+                        if vid_id and vid_id not in seen:
+                            seen.add(vid_id)
+                            title = vr.get('title', {}).get('runs', [{}])[0].get('text', 'YouTube Track')
+                            artist = vr.get('ownerText', {}).get('runs', [{}])[0].get('text', 'YouTube Artist')
+                            dur = vr.get('lengthText', {}).get('simpleText', '3:30')
+                            img = f'https://i.ytimg.com/vi/{vid_id}/hqdefault.jpg'
+                            results.append({'id': vid_id, 'title': title, 'uploader': artist, 'durationStr': dur, 'thumbnail': img, 'source': 'youtube', 'isYouTube': True})
+        except Exception as e:
+            print(f"YouTube fallback search error: {e}")
+
     return results
 
 def get_youtube_recommendations(video_id):
