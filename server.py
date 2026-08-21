@@ -282,20 +282,38 @@ def get_studio_charts(category='global'):
     return search_studio_music(query)
 
 def get_audio_stream_universal(song_id, title=None, artist=None):
-    """Universal audio stream resolver supporting both Option B (Studio) and Option A (YouTube)."""
+    """Universal audio stream resolver supporting exact version matching (Remixes, Live, Acoustic, Covers)."""
     # 1. Try resolving as direct Studio PID
     stream_url = get_studio_stream_url(song_id)
     if stream_url:
         return stream_url
 
-    # 2. If it's a YouTube ID or not found, match by title + artist in Studio Catalog
-    search_q = f"{title or ''} {artist or ''}".strip() or song_id
-    if search_q and len(search_q) > 2:
-        # Clean title of video noise
-        clean_q = re.sub(r'(?i)\b(official|video|audio|lyrics|hd|4k|mv|ft|feat)\b', '', search_q)
-        clean_q = re.sub(r'[^\w\s]', '', clean_q).strip()
-        matched_tracks = search_studio_music(clean_q)
+    # 2. Match exact YouTube version in the high-fidelity master catalog
+    if title:
+        # Remove only cosmetic video labels, strictly preserving version tags (Remix, Live, Acoustic, Cover, Unplugged, etc.)
+        clean_title = re.sub(r'(?i)\b(official\s+music\s+video|official\s+video|music\s+video|lyric\s+video|lyrics\s+video|official\s+audio|full\s+video\s+song|4k|hd|1080p|60fps)\b', '', title)
+        clean_title = re.sub(r'[\(\[\{]\s*(official|video|audio|lyrics|4k|hd)\s*[\)\]\}]', '', clean_title, flags=re.IGNORECASE)
+        clean_title = re.sub(r'\s+', ' ', clean_title).strip(' -:|[]()')
+
+        search_q = f"{clean_title} {artist or ''}".strip()
+        matched_tracks = search_studio_music(search_q)
+        if not matched_tracks:
+            matched_tracks = search_studio_music(clean_title)
+
         if matched_tracks:
+            # Check for exact version match keywords in the title (e.g. 'remix', 'acoustic', 'live', 'unplugged')
+            lower_title = title.lower()
+            version_keywords = ['remix', 'acoustic', 'live', 'unplugged', 'cover', 'slowed', 'reverb', 'instrumental', 'lofi', 'extended', 'mix']
+            target_keywords = [w for w in version_keywords if w in lower_title]
+
+            if target_keywords:
+                # Find the candidate that contains the same version keywords
+                for track in matched_tracks:
+                    track_lower = (track.get('title', '') + ' ' + track.get('album', '')).lower()
+                    if all(kw in track_lower for kw in target_keywords):
+                        return track.get('url') or get_studio_stream_url(track.get('id'))
+
+            # Default to top matched track
             return matched_tracks[0].get('url') or get_studio_stream_url(matched_tracks[0].get('id'))
 
     return None
