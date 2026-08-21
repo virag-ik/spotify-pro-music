@@ -281,43 +281,6 @@ def get_studio_charts(category='global'):
     query = chart_query_map.get(category, 'Top Pop Hits')
     return search_studio_music(query)
 
-def get_audio_stream_universal(song_id, title=None, artist=None):
-    """Universal audio stream resolver supporting exact version matching (Remixes, Live, Acoustic, Covers)."""
-    # 1. Try resolving as direct Studio PID
-    stream_url = get_studio_stream_url(song_id)
-    if stream_url:
-        return stream_url
-
-    # 2. Match exact YouTube version in the high-fidelity master catalog
-    if title:
-        # Remove only cosmetic video labels, strictly preserving version tags (Remix, Live, Acoustic, Cover, Unplugged, etc.)
-        clean_title = re.sub(r'(?i)\b(official\s+music\s+video|official\s+video|music\s+video|lyric\s+video|lyrics\s+video|official\s+audio|full\s+video\s+song|4k|hd|1080p|60fps)\b', '', title)
-        clean_title = re.sub(r'[\(\[\{]\s*(official|video|audio|lyrics|4k|hd)\s*[\)\]\}]', '', clean_title, flags=re.IGNORECASE)
-        clean_title = re.sub(r'\s+', ' ', clean_title).strip(' -:|[]()')
-
-        search_q = f"{clean_title} {artist or ''}".strip()
-        matched_tracks = search_studio_music(search_q)
-        if not matched_tracks:
-            matched_tracks = search_studio_music(clean_title)
-
-        if matched_tracks:
-            # Check for exact version match keywords in the title (e.g. 'remix', 'acoustic', 'live', 'unplugged')
-            lower_title = title.lower()
-            version_keywords = ['remix', 'acoustic', 'live', 'unplugged', 'cover', 'slowed', 'reverb', 'instrumental', 'lofi', 'extended', 'mix']
-            target_keywords = [w for w in version_keywords if w in lower_title]
-
-            if target_keywords:
-                # Find the candidate that contains the same version keywords
-                for track in matched_tracks:
-                    track_lower = (track.get('title', '') + ' ' + track.get('album', '')).lower()
-                    if all(kw in track_lower for kw in target_keywords):
-                        return track.get('url') or get_studio_stream_url(track.get('id'))
-
-            # Default to top matched track
-            return matched_tracks[0].get('url') or get_studio_stream_url(matched_tracks[0].get('id'))
-
-    return None
-
 class InfiStreamStudioHandler(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
         self.send_header('Access-Control-Allow-Origin', '*')
@@ -385,21 +348,25 @@ class InfiStreamStudioHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_json_response({'lyrics': None, 'id': song_id, 'message': 'Lyrics not available for this track'})
             return
 
-        # Direct Audio URL Endpoint — returns 320kbps MP3 audio stream URL
+        # Direct Audio URL Endpoint
         elif path == '/api/audio-url':
             song_id = query.get('id', [''])[0]
-            title = query.get('title', [''])[0]
-            artist = query.get('artist', [''])[0]
+            engine = query.get('engine', ['studio'])[0].strip().lower()
 
             if not song_id:
                 self.send_json_response({'error': 'Missing song id'}, 400)
                 return
 
-            audio_url = get_audio_stream_universal(song_id, title, artist)
-            if audio_url:
-                self.send_json_response({'url': audio_url, 'id': song_id})
+            if engine == 'youtube' or len(song_id) == 11:
+                # 100% Pure YouTube: Return direct YouTube video identity for native player
+                self.send_json_response({'isYouTube': True, 'videoId': song_id, 'id': song_id})
             else:
-                self.send_json_response({'error': 'Could not resolve audio stream', 'id': song_id}, 404)
+                # 100% Pure Studio Master: Return direct 320kbps CD master audio stream
+                audio_url = get_studio_stream_url(song_id)
+                if audio_url:
+                    self.send_json_response({'url': audio_url, 'id': song_id, 'isStudio': True})
+                else:
+                    self.send_json_response({'error': 'Could not resolve 320kbps studio stream', 'id': song_id}, 404)
             return
 
         # Related Videos / Song Radio Endpoint — returns recommended songs for auto-play
@@ -413,12 +380,8 @@ class InfiStreamStudioHandler(http.server.SimpleHTTPRequestHandler):
 
             if engine == 'youtube' or len(song_id) == 11:
                 results = get_youtube_recommendations(song_id)
-                if not results:
-                    results = get_studio_recommendations(song_id)
             else:
                 results = get_studio_recommendations(song_id)
-                if not results:
-                    results = get_youtube_recommendations(song_id)
 
             self.send_json_response({'results': results, 'id': song_id, 'engine': engine})
             return

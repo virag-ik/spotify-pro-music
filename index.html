@@ -460,10 +460,12 @@
         </div>
     </div>
 
-    <!-- Hidden Audio Element for Mobile Background Audio Focus Keep-Alive -->
+    <!-- Pure YouTube & Audio Playback Containers -->
+    <div id="ytPlayerContainer" style="position:fixed; bottom:-9999px; left:-9999px; width:1px; height:1px; opacity:0; pointer-events:none;"></div>
     <audio id="youtubeAudioPlayer" playsinline preload="auto"></audio>
 
-    <script src="app.js?v=2"></script>
+    <script src="https://www.youtube.com/iframe_api"></script>
+    <script src="app.js?v=3"></script>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {

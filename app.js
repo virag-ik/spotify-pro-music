@@ -27,6 +27,77 @@ document.addEventListener('DOMContentLoaded', () => {
     const youtubeAudioPlayer = document.getElementById('youtubeAudioPlayer');
 
     // -------------------------------------------------------------
+    // Pure YouTube Player (Official IFrame API Engine)
+    // -------------------------------------------------------------
+    let ytIframePlayer = null;
+    let isYTIframeReady = false;
+    let isPlayingViaYTIframe = false;
+    let ytTickerInterval = null;
+
+    window.onYouTubeIframeAPIReady = function() {
+        ytIframePlayer = new YT.Player('ytPlayerContainer', {
+            height: '200',
+            width: '200',
+            playerVars: {
+                'playsinline': 1,
+                'controls': 0,
+                'disablekb': 1,
+                'fs': 0,
+                'rel': 0,
+                'origin': window.location.origin
+            },
+            events: {
+                'onReady': () => { isYTIframeReady = true; },
+                'onStateChange': (event) => {
+                    if (event.data === YT.PlayerState.PLAYING) {
+                        setPlayState(true);
+                        startYTProgressTicker();
+                    } else if (event.data === YT.PlayerState.PAUSED) {
+                        setPlayState(false);
+                        stopYTProgressTicker();
+                    } else if (event.data === YT.PlayerState.ENDED) {
+                        stopYTProgressTicker();
+                        if (repeatMode === 1) {
+                            ytIframePlayer.seekTo(0);
+                            ytIframePlayer.playVideo();
+                        } else {
+                            playNextTrack();
+                        }
+                    }
+                }
+            }
+        });
+    };
+
+    function startYTProgressTicker() {
+        stopYTProgressTicker();
+        ytTickerInterval = setInterval(() => {
+            if (ytIframePlayer && ytIframePlayer.getCurrentTime && isPlayingViaYTIframe) {
+                const cur = ytIframePlayer.getCurrentTime();
+                const dur = ytIframePlayer.getDuration();
+                if (dur > 0) {
+                    const pct = (cur / dur) * 100;
+                    if (scrubberFill) scrubberFill.style.width = `${pct}%`;
+                    if (miniPlayerProgressFill) miniPlayerProgressFill.style.width = `${pct}%`;
+                    if (mPlayerSeekSlider) mPlayerSeekSlider.value = Math.floor(pct * 10);
+                    if (barCurrentTime) barCurrentTime.textContent = formatSecs(cur);
+                    if (mPlayerCurrentTime) mPlayerCurrentTime.textContent = formatSecs(cur);
+                    if (barDurationTime) barDurationTime.textContent = formatSecs(dur);
+                    if (mPlayerDurationTime) mPlayerDurationTime.textContent = formatSecs(dur);
+                    highlightLyricsLine(cur, dur);
+                }
+            }
+        }, 300);
+    }
+
+    function stopYTProgressTicker() {
+        if (ytTickerInterval) {
+            clearInterval(ytTickerInterval);
+            ytTickerInterval = null;
+        }
+    }
+
+    // -------------------------------------------------------------
     // Native ExoPlayer Bridge (Spotify-Level Background Audio Engine)
     // -------------------------------------------------------------
     let isNativeExoPlayerActive = false;
@@ -958,25 +1029,46 @@ document.addEventListener('DOMContentLoaded', () => {
         youtubeAudioPlayer.removeAttribute('src');
         isAudioElementPlaying = false;
 
+        // 1. Pure YouTube Engine (Official IFrame API)
+        if (currentPlayingTrack && (currentPlayingTrack.source === 'youtube' || (trackId && trackId.length === 11))) {
+            if (NativePlayer.isAvailable()) {
+                NativePlayer.pause().catch(()=>{});
+            }
+            if (ytIframePlayer && isYTIframeReady) {
+                isPlayingViaYTIframe = true;
+                ytIframePlayer.loadVideoById(trackId);
+                ytIframePlayer.playVideo();
+                setPlayState(true);
+                searchStatusText.textContent = `Playing Pure YouTube: "${currentPlayingTrack.title}"`;
+                prefetchNextTrackForNativeQueue(trackId);
+                return;
+            }
+        }
+
+        // 2. Pure Studio Master Engine (320kbps CD Lossless)
+        isPlayingViaYTIframe = false;
+        stopYTProgressTicker();
+        if (ytIframePlayer && isYTIframeReady) {
+            try { ytIframePlayer.stopVideo(); } catch(e){}
+        }
+
         let audioUrl = directUrl || (currentPlayingTrack ? currentPlayingTrack.url : null);
 
         if (!audioUrl) {
             try {
-                searchStatusText.textContent = `Loading 320kbps audio stream...`;
-                const trackTitle = currentPlayingTrack ? currentPlayingTrack.title : '';
-                const trackArtist = currentPlayingTrack ? currentPlayingTrack.uploader : '';
-                const resp = await fetch(`/api/audio-url?id=${trackId}&title=${encodeURIComponent(trackTitle)}&artist=${encodeURIComponent(trackArtist)}`);
+                searchStatusText.textContent = `Loading 320kbps Studio Master...`;
+                const resp = await fetch(`/api/audio-url?id=${trackId}&engine=studio`);
                 if (resp.ok) {
                     const data = await resp.json();
                     audioUrl = data.url;
                 }
             } catch (e) {
-                console.error("Audio stream load error:", e);
+                console.error("Studio stream load error:", e);
             }
         }
 
         if (audioUrl) {
-            // Plan A: Route to Native ExoPlayer Engine (Spotify-Level background audio)
+            // Route to Native ExoPlayer Engine (Spotify-Level background audio)
             if (NativePlayer.isAvailable()) {
                 const played = await NativePlayer.play(currentPlayingTrack, audioUrl);
                 if (played) {
@@ -990,7 +1082,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Web browser HTML5 Audio fallback
             youtubeAudioPlayer.src = audioUrl;
-            youtubeAudioPlayer.loop = false;
+            youtubeAudioPlayer.loop = (repeatMode === 1);
             await youtubeAudioPlayer.play();
             isAudioElementPlaying = true;
             setPlayState(true);
@@ -1032,7 +1124,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function togglePlayPause() {
-        // Handle Native ExoPlayer playback (Spotify Engine)
+        // Pure YouTube playback handling
+        if (isPlayingViaYTIframe && ytIframePlayer) {
+            if (isPlaying) {
+                ytIframePlayer.pauseVideo();
+                setPlayState(false);
+            } else {
+                ytIframePlayer.playVideo();
+                setPlayState(true);
+            }
+            return;
+        }
+
+        // Handle Native ExoPlayer playback (Studio Engine)
         if (isNativeExoPlayerActive && NativePlayer.isAvailable()) {
             if (isPlaying) {
                 NativePlayer.pause();
@@ -1253,6 +1357,21 @@ document.addEventListener('DOMContentLoaded', () => {
         const clientX = (e.touches && e.touches.length > 0) ? e.touches[0].clientX : e.clientX;
         const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
         
+        if (isPlayingViaYTIframe && ytIframePlayer && ytIframePlayer.getDuration) {
+            const dur = ytIframePlayer.getDuration();
+            if (dur > 0) {
+                const targetSecs = pct * dur;
+                ytIframePlayer.seekTo(targetSecs, true);
+                if (barCurrentTime) barCurrentTime.textContent = formatSecs(targetSecs);
+                if (mPlayerCurrentTime) mPlayerCurrentTime.textContent = formatSecs(targetSecs);
+                const fillWidth = `${pct * 100}%`;
+                if (scrubberFill) scrubberFill.style.width = fillWidth;
+                if (miniPlayerProgressFill) miniPlayerProgressFill.style.width = fillWidth;
+                if (mPlayerSeekSlider) mPlayerSeekSlider.value = Math.floor(pct * 1000);
+            }
+            return;
+        }
+
         const targetDuration = nativeTrackDuration > 0 ? nativeTrackDuration : (youtubeAudioPlayer && youtubeAudioPlayer.duration ? youtubeAudioPlayer.duration : 0);
         if (targetDuration > 0) {
             const targetSecs = pct * targetDuration;
@@ -1280,7 +1399,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (mPlayerSeekSlider) {
         mPlayerSeekSlider.addEventListener('input', (e) => {
             const targetRatio = parseInt(e.target.value) / 1000;
-            const targetDuration = nativeTrackDuration > 0 ? nativeTrackDuration : (youtubeAudioPlayer && youtubeAudioPlayer.duration ? youtubeAudioPlayer.duration : 0);
+            const targetDuration = isPlayingViaYTIframe && ytIframePlayer && ytIframePlayer.getDuration ? ytIframePlayer.getDuration() : (nativeTrackDuration > 0 ? nativeTrackDuration : (youtubeAudioPlayer && youtubeAudioPlayer.duration ? youtubeAudioPlayer.duration : 0));
             if (targetDuration > 0) {
                 const targetSecs = targetRatio * targetDuration;
                 if (mPlayerCurrentTime) mPlayerCurrentTime.textContent = formatSecs(targetSecs);
@@ -1288,6 +1407,13 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         mPlayerSeekSlider.addEventListener('change', (e) => {
             const targetRatio = parseInt(e.target.value) / 1000;
+            if (isPlayingViaYTIframe && ytIframePlayer && ytIframePlayer.getDuration) {
+                const dur = ytIframePlayer.getDuration();
+                if (dur > 0) {
+                    ytIframePlayer.seekTo(targetRatio * dur, true);
+                }
+                return;
+            }
             const targetDuration = nativeTrackDuration > 0 ? nativeTrackDuration : (youtubeAudioPlayer && youtubeAudioPlayer.duration ? youtubeAudioPlayer.duration : 0);
             if (targetDuration > 0) {
                 const targetSecs = targetRatio * targetDuration;
