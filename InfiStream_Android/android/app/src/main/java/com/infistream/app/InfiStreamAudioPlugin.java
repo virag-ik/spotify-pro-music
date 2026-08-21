@@ -257,4 +257,119 @@ public class InfiStreamAudioPlugin extends Plugin {
         ret.put("duration", mediaController.getDuration());
         call.resolve(ret);
     }
+
+    @PluginMethod
+    public void playYouTube(PluginCall call) {
+        String videoId = call.getString("videoId");
+        String title = call.getString("title", "YouTube Track");
+        String artist = call.getString("artist", "YouTube Artist");
+        String album = call.getString("album", "InfiStream Music");
+        String artworkUrl = call.getString("artworkUrl", "");
+
+        if (videoId == null || videoId.isEmpty()) {
+            call.reject("videoId is required");
+            return;
+        }
+
+        new Thread(() -> {
+            String resolvedStreamUrl = resolveYouTubeStreamUrl(videoId);
+            getActivity().runOnUiThread(() -> {
+                if (mediaController == null) {
+                    call.reject("MediaController not ready");
+                    return;
+                }
+
+                if (resolvedStreamUrl != null && !resolvedStreamUrl.isEmpty()) {
+                    MediaMetadata.Builder metadataBuilder = new MediaMetadata.Builder()
+                            .setTitle(title)
+                            .setArtist(artist)
+                            .setAlbumTitle(album);
+
+                    if (!artworkUrl.isEmpty()) {
+                        metadataBuilder.setArtworkUri(Uri.parse(artworkUrl));
+                    }
+
+                    MediaItem mediaItem = new MediaItem.Builder()
+                            .setUri(Uri.parse(resolvedStreamUrl))
+                            .setMediaId(videoId)
+                            .setMediaMetadata(metadataBuilder.build())
+                            .build();
+
+                    mediaController.setMediaItem(mediaItem);
+                    mediaController.prepare();
+                    mediaController.play();
+
+                    JSObject ret = new JSObject();
+                    ret.put("status", "playing");
+                    ret.put("streamUrl", resolvedStreamUrl);
+                    call.resolve(ret);
+                } else {
+                    call.reject("Could not resolve mobile stream URL for YouTube video: " + videoId);
+                }
+            });
+        }).start();
+    }
+
+    private String resolveYouTubeStreamUrl(String videoId) {
+        try {
+            java.net.URL url = new java.net.URL("https://www.youtube.com/youtubei/v1/player");
+            java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setRequestProperty("User-Agent", "com.google.android.youtube/19.29.37 (Linux; U; Android 14; en_US; Pixel 8 Pro) gzip");
+            conn.setConnectTimeout(6000);
+            conn.setReadTimeout(6000);
+            conn.setDoOutput(true);
+
+            org.json.JSONObject client = new org.json.JSONObject();
+            client.put("clientName", "ANDROID");
+            client.put("clientVersion", "19.29.37");
+            client.put("androidSdkVersion", 34);
+            client.put("hl", "en");
+            client.put("gl", "US");
+
+            org.json.JSONObject context = new org.json.JSONObject();
+            context.put("client", client);
+
+            org.json.JSONObject payload = new org.json.JSONObject();
+            payload.put("context", context);
+            payload.put("videoId", videoId);
+
+            byte[] out = payload.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            try (java.io.OutputStream os = conn.getOutputStream()) {
+                os.write(out);
+            }
+
+            int responseCode = conn.getResponseCode();
+            if (responseCode == 200) {
+                java.io.InputStream is = conn.getInputStream();
+                java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(is, java.nio.charset.StandardCharsets.UTF_8));
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    sb.append(line);
+                }
+                org.json.JSONObject data = new org.json.JSONObject(sb.toString());
+                org.json.JSONObject sd = data.optJSONObject("streamingData");
+                if (sd != null) {
+                    org.json.JSONArray adaptive = sd.optJSONArray("adaptiveFormats");
+                    if (adaptive != null) {
+                        for (int i = 0; i < adaptive.length(); i++) {
+                            org.json.JSONObject fmt = adaptive.getJSONObject(i);
+                            String mime = fmt.optString("mimeType", "");
+                            if (mime.contains("audio")) {
+                                String streamUrl = fmt.optString("url", "");
+                                if (!streamUrl.isEmpty()) {
+                                    return streamUrl;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
 }

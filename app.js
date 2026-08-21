@@ -135,6 +135,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 return false;
             }
         },
+        playYouTube: async (track) => {
+            if (!NativePlayer.isAvailable()) return false;
+            try {
+                const res = await NativePlayer.getPlugin().playYouTube({
+                    videoId: (track && track.id) ? track.id : '',
+                    title: (track && track.title) ? track.title : 'YouTube Track',
+                    artist: (track && track.uploader) ? track.uploader : 'YouTube Artist',
+                    album: 'InfiStream Music',
+                    artworkUrl: (track && track.thumbnail) ? track.thumbnail : ''
+                });
+                isNativeExoPlayerActive = true;
+                return !!(res && res.status === 'playing');
+            } catch (e) {
+                console.error("Native ExoPlayer playYouTube error:", e);
+                return false;
+            }
+        },
         queueNext: async (track, streamUrl) => {
             if (!NativePlayer.isAvailable()) return false;
             try {
@@ -1049,11 +1066,22 @@ document.addEventListener('DOMContentLoaded', () => {
         youtubeAudioPlayer.removeAttribute('src');
         isAudioElementPlaying = false;
 
-        // 1. Pure YouTube Engine (Official IFrame API)
+        // 1. Pure YouTube Engine (Native ExoPlayer on Mobile / IFrame on Desktop)
         if (currentPlayingTrack && (currentPlayingTrack.source === 'youtube' || (trackId && trackId.length === 11))) {
             if (NativePlayer.isAvailable()) {
-                NativePlayer.pause().catch(()=>{});
+                searchStatusText.textContent = `Loading YouTube Audio: "${currentPlayingTrack.title}"...`;
+                const playedNatively = await NativePlayer.playYouTube(currentPlayingTrack);
+                if (playedNatively) {
+                    isPlayingViaYTIframe = false;
+                    isAudioElementPlaying = true;
+                    setPlayState(true);
+                    updateMediaSession(currentPlayingTrack);
+                    searchStatusText.textContent = `Playing Native YouTube: "${currentPlayingTrack.title}"`;
+                    prefetchNextTrackForNativeQueue(trackId);
+                    return;
+                }
             }
+
             if (ytIframePlayer && isYTIframeReady) {
                 isPlayingViaYTIframe = true;
                 ytIframePlayer.loadVideoById(trackId);
