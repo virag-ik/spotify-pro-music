@@ -321,18 +321,33 @@ def get_youtube_recommendations(video_id):
         print(f"YouTube recommendations error: {e}")
     return results
 
-def get_studio_lyrics(song_id):
-    """Fetch official lyrics for a song ID."""
-    url = f"https://www.jiosaavn.com/api.php?__call=lyrics.getLyrics&lyrics_id={song_id}&_format=json&_marker=0&cc=in"
-    headers = {"User-Agent": "Mozilla/5.0"}
-    try:
-        req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=5, context=ssl_ctx) as resp:
-            data = json.loads(resp.read().decode('utf-8', 'replace'))
-            if data and data.get('lyrics'):
-                return data.get('lyrics')
-    except Exception as e:
-        print(f"Lyrics fetch error: {e}")
+def get_studio_lyrics(song_id, title="", artist=""):
+    """Fetch official synchronized karaoke lyrics using LRCLIB and Studio database."""
+    if title:
+        try:
+            clean_title = re.sub(r'\(.*?\)|\[.*?\]|feat\..*|ft\..*|official.*|video.*|lyrics.*', '', title, flags=re.IGNORECASE).strip()
+            clean_artist = re.sub(r'\(.*?\)|\[.*?\]|feat\..*|ft\..*', '', artist, flags=re.IGNORECASE).strip()
+            url = f"https://lrclib.net/api/get?track_name={urllib.request.quote(clean_title)}&artist_name={urllib.request.quote(clean_artist)}"
+            req = urllib.request.Request(url, headers={"User-Agent": "InfiStreamMusic/1.0"})
+            with urllib.request.urlopen(req, timeout=4, context=ssl_ctx) as resp:
+                data = json.loads(resp.read().decode('utf-8', 'replace'))
+                if data.get('syncedLyrics') or data.get('plainLyrics'):
+                    return data.get('syncedLyrics') or data.get('plainLyrics')
+        except Exception as e:
+            pass
+
+    if song_id and len(song_id) != 11:
+        url = f"https://www.jiosaavn.com/api.php?__call=lyrics.getLyrics&lyrics_id={song_id}&_format=json&_marker=0&cc=in"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        try:
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=4, context=ssl_ctx) as resp:
+                data = json.loads(resp.read().decode('utf-8', 'replace'))
+                if data and data.get('lyrics'):
+                    return data.get('lyrics')
+        except Exception as e:
+            pass
+
     return None
 
 def get_studio_charts(category='global'):
@@ -380,7 +395,7 @@ class InfiStreamStudioHandler(http.server.SimpleHTTPRequestHandler):
             return
 
         # Search Endpoint
-        if path == '/api/search':
+        elif path == '/api/search':
             search_query = query.get('q', [''])[0].strip()
             engine = query.get('engine', ['studio'])[0].strip().lower()
 
@@ -403,13 +418,12 @@ class InfiStreamStudioHandler(http.server.SimpleHTTPRequestHandler):
         # Lyrics Endpoint
         elif path == '/api/lyrics':
             song_id = query.get('id', [''])[0]
-            if not song_id:
-                self.send_json_response({'error': 'Missing song id'}, 400)
-                return
+            title = query.get('title', [''])[0]
+            artist = query.get('artist', [''])[0]
 
-            lyrics_text = get_studio_lyrics(song_id)
+            lyrics_text = get_studio_lyrics(song_id, title=title, artist=artist)
             if lyrics_text:
-                self.send_json_response({'lyrics': lyrics_text, 'id': song_id})
+                self.send_json_response({'lyrics': lyrics_text, 'id': song_id, 'title': title})
             else:
                 self.send_json_response({'lyrics': None, 'id': song_id, 'message': 'Lyrics not available for this track'})
             return
